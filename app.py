@@ -31,7 +31,23 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      .stApp { background: #f7f8fc; }
+      .stApp {
+        background: #f7f8fc;
+        color: #172033;
+        color-scheme: light;
+      }
+      [data-testid="stWidgetLabel"] p,
+      [data-testid="stCaptionContainer"] p,
+      [data-testid="stMarkdownContainer"] > p,
+      button[data-baseweb="tab"] p {
+        color: #172033 !important;
+      }
+      div[data-baseweb="input"] input,
+      div[data-baseweb="base-input"] input {
+        background: #ffffff !important;
+        color: #172033 !important;
+        -webkit-text-fill-color: #172033 !important;
+      }
       .block-container { max-width: 1240px; padding-top: 2rem; padding-bottom: 5rem; }
       .hero {
         padding: 2.2rem; border-radius: 24px; color: white; margin-bottom: 1rem;
