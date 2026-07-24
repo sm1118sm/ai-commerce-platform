@@ -133,6 +133,9 @@ def render_auth() -> None:
             if submitted:
                 try:
                     login_user(database.authenticate(email, password))
+                    st.session_state.auth_notice = (
+                        "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
+                    )
                     st.rerun()
                 except ValueError as error:
                     st.error(str(error))
@@ -173,12 +176,23 @@ def render_auth() -> None:
                     st.error("비밀번호 확인이 일치하지 않습니다.")
                 else:
                     try:
-                        user = database.register_user(
+                        created_user = database.register_user(
                             signup_email,
                             signup_password,
                             signup_nickname,
                         )
+                        user = database.authenticate(
+                            signup_email,
+                            signup_password,
+                        )
+                        if int(user["id"]) != int(created_user["id"]):
+                            raise ValueError(
+                                "회원가입 정보 저장을 확인하지 못했습니다."
+                            )
                         login_user(user)
+                        st.session_state.auth_notice = (
+                            "회원가입 정보가 DB에 저장되고 로그인되었습니다."
+                        )
                         st.rerun()
                     except ValueError as error:
                         st.error(str(error))
@@ -342,6 +356,8 @@ if not st.session_state.user_id:
     st.stop()
 initialize_state()
 current_user = database.get_user(int(st.session_state.user_id))
+if auth_notice := st.session_state.pop("auth_notice", None):
+    st.toast(auth_notice, icon="✅")
 
 with st.sidebar:
     st.caption(f"로그인: {current_user['email']}")
@@ -363,16 +379,20 @@ with st.sidebar:
             format="%d원",
         )
         if st.form_submit_button("취향 저장", type="primary", width="stretch"):
-            st.session_state.nickname = nickname.strip() or "게스트"
-            st.session_state.interests = interests
-            st.session_state.budget = budget
-            database.save_profile(
-                int(st.session_state.user_id),
-                st.session_state.nickname,
-                list(st.session_state.interests),
-                tuple(st.session_state.budget),
-            )
-            st.toast("취향이 추천에 반영됐어요.")
+            try:
+                saved_nickname = nickname.strip() or "게스트"
+                database.save_profile(
+                    int(st.session_state.user_id),
+                    saved_nickname,
+                    list(interests),
+                    tuple(budget),
+                )
+                st.session_state.nickname = saved_nickname
+                st.session_state.interests = interests
+                st.session_state.budget = budget
+                st.toast("취향이 추천에 반영됐어요.")
+            except ValueError as error:
+                st.error(str(error))
     st.divider()
     st.metric("찜한 상품", len(st.session_state.favorites))
     st.metric("장바구니 수량", sum(st.session_state.cart.values()))

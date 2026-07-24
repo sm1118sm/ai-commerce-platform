@@ -67,6 +67,71 @@ class DatabaseTest(unittest.TestCase):
             self.assertEqual(database.load_favorites(int(first["id"])), {"P001"})
             self.assertEqual(database.load_favorites(int(second["id"])), set())
 
+    def test_duplicate_email_and_nickname_are_rejected(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = StoreDatabase(Path(directory) / "store.db")
+            first = database.register_user(
+                " Member@Example.com ",
+                "password-one",
+                "UniqueName",
+            )
+
+            with self.assertRaisesRegex(ValueError, "이미 가입된 이메일"):
+                database.register_user(
+                    "member@example.com",
+                    "password-two",
+                    "AnotherName",
+                )
+
+            with self.assertRaisesRegex(ValueError, "이미 사용 중인 닉네임"):
+                database.register_user(
+                    "another@example.com",
+                    "password-two",
+                    " uniquename ",
+                )
+
+            authenticated = database.authenticate(
+                "MEMBER@example.com",
+                "password-one",
+            )
+            self.assertEqual(int(authenticated["id"]), int(first["id"]))
+            with database.connect() as connection:
+                count = connection.execute(
+                    "SELECT COUNT(*) AS count FROM users"
+                ).fetchone()["count"]
+            self.assertEqual(int(count), 1)
+
+    def test_profile_cannot_take_an_existing_nickname(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = StoreDatabase(Path(directory) / "store.db")
+            first = database.register_user(
+                "one@example.com",
+                "password-one",
+                "FirstName",
+            )
+            second = database.register_user(
+                "two@example.com",
+                "password-two",
+                "SecondName",
+            )
+
+            with self.assertRaisesRegex(ValueError, "이미 사용 중인 닉네임"):
+                database.save_profile(
+                    int(second["id"]),
+                    " firstname ",
+                    [],
+                    (20_000, 150_000),
+                )
+
+            self.assertEqual(
+                database.load_profile(int(first["id"]))["nickname"],
+                "FirstName",
+            )
+            self.assertEqual(
+                database.load_profile(int(second["id"]))["nickname"],
+                "SecondName",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

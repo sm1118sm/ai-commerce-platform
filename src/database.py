@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,6 +29,21 @@ ACTION_WEIGHTS = {
 VALID_ACTIONS = set(ACTION_WEIGHTS)
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_ITERATIONS = 240_000
+
+
+def normalize_email(email: str) -> str:
+    return unicodedata.normalize("NFKC", email).strip().lower()
+
+
+def normalize_nickname(nickname: str) -> str:
+    return unicodedata.normalize("NFKC", nickname).strip()
+
+
+def is_unique_violation(error: Exception) -> bool:
+    return (
+        isinstance(error, sqlite3.IntegrityError)
+        or getattr(error, "sqlstate", None) == "23505"
+    )
 
 
 class _ConnectionAdapter:
@@ -169,6 +185,11 @@ class StoreDatabase:
                     last_login_at TEXT
                 );
 
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique_ci
+                    ON users(LOWER(TRIM(email)));
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique_ci
+                    ON users(LOWER(TRIM(nickname)));
+
                 CREATE TABLE IF NOT EXISTS products (
                     product_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -305,8 +326,8 @@ class StoreDatabase:
         password: str,
         nickname: str,
     ) -> dict:
-        email = email.strip().lower()
-        nickname = nickname.strip()
+        email = normalize_email(email)
+        nickname = normalize_nickname(nickname)
         if not EMAIL_PATTERN.match(email):
             raise ValueError("올바른 이메일 주소를 입력하세요.")
         if len(password) < 8:
@@ -314,15 +335,28 @@ class StoreDatabase:
         if not 1 <= len(nickname) <= 30:
             raise ValueError("닉네임은 1~30자로 입력하세요.")
         now = datetime.now().isoformat(timespec="seconds")
-        with self.connect() as connection:
-            duplicate = connection.execute(
-                "SELECT 1 FROM users WHERE LOWER(email) = LOWER(?)",
-                (email,),
-            ).fetchone()
-        if duplicate:
-            raise ValueError("이미 가입된 이메일입니다.")
         try:
             with self.connect() as connection:
+                duplicate_email = connection.execute(
+                    """
+                    SELECT 1 FROM users
+                    WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+                    """,
+                    (email,),
+                ).fetchone()
+                if duplicate_email:
+                    raise ValueError(
+                        "이미 가입된 이메일입니다. 한 이메일당 하나의 계정만 만들 수 있습니다."
+                    )
+                duplicate_nickname = connection.execute(
+                    """
+                    SELECT 1 FROM users
+                    WHERE LOWER(TRIM(nickname)) = LOWER(TRIM(?))
+                    """,
+                    (nickname,),
+                ).fetchone()
+                if duplicate_nickname:
+                    raise ValueError("이미 사용 중인 닉네임입니다.")
                 insert_sql = """
                     INSERT INTO users(
                         email, password_hash, nickname, role, status, created_at
@@ -349,8 +383,16 @@ class StoreDatabase:
                     """,
                     (user_id, now),
                 )
-        except sqlite3.IntegrityError as error:
-            raise ValueError("이미 가입된 이메일입니다.") from error
+        except ValueError:
+            raise
+        except Exception as error:
+            if not is_unique_violation(error):
+                raise
+            if "nickname" in str(error).lower():
+                raise ValueError("이미 사용 중인 닉네임입니다.") from error
+            raise ValueError(
+                "이미 가입된 이메일입니다. 한 이메일당 하나의 계정만 만들 수 있습니다."
+            ) from error
         return self.get_user(user_id)
 
     def ensure_demo_user(self) -> dict:
@@ -365,10 +407,11 @@ class StoreDatabase:
         return self.register_user(email, "stylepick-demo", "데모 사용자")
 
     def authenticate(self, email: str, password: str) -> dict:
+        email = normalize_email(email)
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT * FROM users WHERE LOWER(email) = LOWER(?)",
-                (email.strip(),),
+                (email,),
             ).fetchone()
             if (
                 row is None
@@ -424,36 +467,53 @@ class StoreDatabase:
         interests: list[str],
         budget: tuple[int, int],
     ) -> None:
-        nickname = nickname.strip()
+        nickname = normalize_nickname(nickname)
         if not 1 <= len(nickname) <= 30:
             raise ValueError("닉네임은 1~30자로 입력하세요.")
         if int(budget[0]) > int(budget[1]):
             raise ValueError("최소 가격은 최대 가격보다 클 수 없습니다.")
         now = datetime.now().isoformat(timespec="seconds")
-        with self.connect() as connection:
-            connection.execute(
-                "UPDATE users SET nickname = ? WHERE id = ?",
-                (nickname, int(user_id)),
-            )
-            connection.execute(
-                """
-                INSERT INTO user_preferences(
-                    user_id, interests_json, budget_min, budget_max, updated_at
-                ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    interests_json = excluded.interests_json,
-                    budget_min = excluded.budget_min,
-                    budget_max = excluded.budget_max,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    int(user_id),
-                    json.dumps(interests, ensure_ascii=False),
-                    int(budget[0]),
-                    int(budget[1]),
-                    now,
-                ),
-            )
+        try:
+            with self.connect() as connection:
+                duplicate_nickname = connection.execute(
+                    """
+                    SELECT 1 FROM users
+                    WHERE LOWER(TRIM(nickname)) = LOWER(TRIM(?))
+                      AND id <> ?
+                    """,
+                    (nickname, int(user_id)),
+                ).fetchone()
+                if duplicate_nickname:
+                    raise ValueError("이미 사용 중인 닉네임입니다.")
+                connection.execute(
+                    "UPDATE users SET nickname = ? WHERE id = ?",
+                    (nickname, int(user_id)),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO user_preferences(
+                        user_id, interests_json, budget_min, budget_max, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        interests_json = excluded.interests_json,
+                        budget_min = excluded.budget_min,
+                        budget_max = excluded.budget_max,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        int(user_id),
+                        json.dumps(interests, ensure_ascii=False),
+                        int(budget[0]),
+                        int(budget[1]),
+                        now,
+                    ),
+                )
+        except ValueError:
+            raise
+        except Exception as error:
+            if is_unique_violation(error):
+                raise ValueError("이미 사용 중인 닉네임입니다.") from error
+            raise
 
     def load_favorites(self, user_id: int) -> set[str]:
         with self.connect() as connection:

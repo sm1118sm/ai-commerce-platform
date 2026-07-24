@@ -9,6 +9,12 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TEXT
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique_ci
+    ON users ((LOWER(BTRIM(email))));
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique_ci
+    ON users ((LOWER(BTRIM(nickname))));
+
 CREATE TABLE IF NOT EXISTS products (
     product_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -79,4 +85,3 @@ CREATE TABLE IF NOT EXISTS order_items (
     quantity INTEGER NOT NULL,
     unit_price INTEGER NOT NULL
 );
-
