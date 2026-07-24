@@ -3,6 +3,8 @@
 사용자의 관심 카테고리, 찜한 상품, 예산을 분석해 상품과 추천 이유를
 보여주는 설명 가능한 AI 이커머스 MVP입니다.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sm1118sm/ai-commerce-platform)
+
 ## 핵심 기능
 
 - 30개 상품 탐색, 검색, 카테고리·가격 필터
