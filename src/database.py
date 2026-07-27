@@ -270,7 +270,7 @@ class StoreDatabase:
                         creator=pymysql,
                         maxconnections=6,
                         # Keep a second TLS connection ready for the asynchronous
-                        # login audit update and the immediately following page load.
+                        # login audit update and the storefront snapshot.
                         mincached=2,
                         maxcached=4,
                         blocking=True,
@@ -760,6 +760,146 @@ class StoreDatabase:
                 (int(user_id),),
             ).fetchall()
         return {str(row["product_id"]): int(row["quantity"]) for row in rows}
+
+    def load_storefront_snapshot(self, user_id: int) -> dict:
+        """Load all state needed by the storefront in one remote round trip."""
+        behavior_cutoff = (
+            datetime.now() - timedelta(days=90)
+        ).isoformat(timespec="seconds")
+        trend_cutoff = (
+            datetime.now() - timedelta(days=7)
+        ).isoformat(timespec="seconds")
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    'profile' AS section, u.nickname AS key_text,
+                    NULL AS value_text, p.interests_json AS json_value,
+                    p.budget_min AS number_value,
+                    p.budget_max AS second_number_value,
+                    NULL AS created_at
+                FROM users u
+                LEFT JOIN user_preferences p ON p.user_id = u.id
+                WHERE u.id = ?
+
+                UNION ALL
+
+                SELECT
+                    'favorite', product_id, NULL, NULL, NULL, NULL, NULL
+                FROM user_favorites
+                WHERE user_id = ?
+
+                UNION ALL
+
+                SELECT
+                    'cart', product_id, NULL, NULL, quantity, NULL, NULL
+                FROM user_cart
+                WHERE user_id = ?
+
+                UNION ALL
+
+                SELECT
+                    'behavior_summary', action_type, NULL, NULL,
+                    COUNT(*), NULL, NULL
+                FROM behavior_logs
+                WHERE user_id = ?
+                GROUP BY action_type
+
+                UNION ALL
+
+                SELECT
+                    'behavior_weight', product_id, action_type, NULL,
+                    NULL, NULL, created_at
+                FROM behavior_logs
+                WHERE user_id = ? AND product_id IS NOT NULL
+                  AND created_at >= ?
+
+                UNION ALL
+
+                SELECT
+                    'purchased', oi.product_id, NULL, NULL,
+                    NULL, NULL, NULL
+                FROM order_items oi
+                JOIN user_orders o ON o.order_id = oi.order_id
+                WHERE o.user_id = ?
+                GROUP BY oi.product_id
+
+                UNION ALL
+
+                SELECT
+                    'trend', product_id, action_type, NULL,
+                    NULL, NULL, NULL
+                FROM behavior_logs
+                WHERE product_id IS NOT NULL AND created_at >= ?
+                """,
+                (
+                    int(user_id),
+                    int(user_id),
+                    int(user_id),
+                    int(user_id),
+                    int(user_id),
+                    behavior_cutoff,
+                    int(user_id),
+                    trend_cutoff,
+                ),
+            ).fetchall()
+
+        snapshot = {
+            "profile": None,
+            "favorites": set(),
+            "cart": {},
+            "behavior_summary": {},
+            "behavior_weights": {},
+            "trend_scores": {},
+            "purchased_ids": set(),
+        }
+        raw_trends: dict[str, float] = {}
+        for row in rows:
+            section = str(row["section"])
+            key = str(row["key_text"]) if row["key_text"] is not None else ""
+            if section == "profile":
+                interests = row["json_value"] or []
+                if isinstance(interests, str):
+                    interests = json.loads(interests)
+                snapshot["profile"] = {
+                    "nickname": key,
+                    "interests": list(interests),
+                    "budget": (
+                        int(row["number_value"] or 0),
+                        int(row["second_number_value"] or 250_000),
+                    ),
+                }
+            elif section == "favorite":
+                snapshot["favorites"].add(key)
+            elif section == "cart":
+                snapshot["cart"][key] = int(row["number_value"])
+            elif section == "behavior_summary":
+                snapshot["behavior_summary"][key] = int(row["number_value"])
+            elif section == "behavior_weight":
+                action_type = str(row["value_text"])
+                score = ACTION_WEIGHTS.get(action_type, 0) * recency_weight(
+                    row["created_at"]
+                )
+                snapshot["behavior_weights"][key] = (
+                    snapshot["behavior_weights"].get(key, 0) + score
+                )
+            elif section == "purchased":
+                snapshot["purchased_ids"].add(key)
+            elif section == "trend":
+                action_type = str(row["value_text"])
+                raw_trends[key] = raw_trends.get(key, 0) + max(
+                    0,
+                    ACTION_WEIGHTS.get(action_type, 0),
+                )
+        if snapshot["profile"] is None:
+            raise ValueError("사용자를 찾을 수 없습니다.")
+        trend_maximum = max(raw_trends.values(), default=0)
+        if trend_maximum > 0:
+            snapshot["trend_scores"] = {
+                product_id: score / trend_maximum
+                for product_id, score in raw_trends.items()
+            }
+        return snapshot
 
     def add_to_cart(
         self,

@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from src.catalog import load_products
-from src.recommender import fit_recommender, recommend
+from src.recommender import RecommendationModel, fit_recommender, recommend
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -133,6 +135,59 @@ class RecommenderTest(unittest.TestCase):
             penalized.loc["P001", "negative_behavior_score"],
             0.2,
         )
+
+    def test_e5_reuses_catalog_vectors_for_known_user_signals(self) -> None:
+        class EncoderThatMustNotRun:
+            def encode(self, *args, **kwargs):
+                raise AssertionError("known catalog signals must not be encoded")
+
+        model = RecommendationModel(
+            backend="e5",
+            vectorizer=None,
+            encoder=EncoderThatMustNotRun(),
+            product_matrix=np.eye(len(self.products)),
+        )
+        result = recommend(
+            self.products,
+            model,
+            interests=["전자기기"],
+            favorite_ids={"P001"},
+            budget_min=0,
+            budget_max=250_000,
+            top_n=8,
+            behavior_product_weights={"P002": 4.0},
+        )
+        self.assertEqual(len(result), 8)
+        self.assertNotIn("P001", result["id"].tolist())
+
+    def test_e5_encodes_only_an_arbitrary_search_query(self) -> None:
+        vector_size = len(self.products)
+
+        class CountingEncoder:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def encode(self, texts, **kwargs):
+                self.calls += 1
+                return np.ones((len(texts), vector_size)) / np.sqrt(vector_size)
+
+        encoder = CountingEncoder()
+        model = RecommendationModel(
+            backend="e5",
+            vectorizer=None,
+            encoder=encoder,
+            product_matrix=np.eye(len(self.products)),
+        )
+        recommend(
+            self.products,
+            model,
+            interests=[],
+            favorite_ids=set(),
+            budget_min=0,
+            budget_max=250_000,
+            query_text="출퇴근용 가벼운 가방",
+        )
+        self.assertEqual(encoder.calls, 1)
 
 
 if __name__ == "__main__":

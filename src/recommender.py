@@ -95,6 +95,103 @@ def _text_similarity(model: RecommendationModel, text: str) -> np.ndarray:
     return cosine_similarity(vector, model.product_matrix).ravel()
 
 
+def _normalized_matrix_similarity(
+    model: RecommendationModel,
+    vector: np.ndarray,
+) -> np.ndarray:
+    raw_scores = np.asarray(model.product_matrix @ vector).ravel()
+    minimum = float(raw_scores.min())
+    maximum = float(raw_scores.max())
+    if maximum == minimum:
+        return np.ones(len(raw_scores))
+    return (raw_scores - minimum) / (maximum - minimum)
+
+
+def _e5_profile_similarity(
+    products: pd.DataFrame,
+    model: RecommendationModel,
+    interests: list[str],
+    favorite_ids: set[str],
+    query_text: str,
+) -> np.ndarray:
+    """Build known-user vectors from cached product embeddings.
+
+    Category and favorite signals already point at catalog products, so encoding
+    their text again on every Streamlit rerun only adds CPU latency. Arbitrary
+    search text still goes through E5 once because it has no catalog vector.
+    """
+    matrix = np.asarray(model.product_matrix)
+    vector_parts: list[np.ndarray] = []
+    vector_weights: list[float] = []
+
+    for interest in interests:
+        indices = np.flatnonzero(
+            products["category"].astype(str).to_numpy() == str(interest)
+        )
+        if len(indices):
+            vector_parts.append(matrix[indices].mean(axis=0))
+            vector_weights.append(3.0)
+
+    favorite_indices = np.flatnonzero(
+        products["id"].astype(str).isin(favorite_ids).to_numpy()
+    )
+    for index in favorite_indices:
+        vector_parts.append(matrix[index])
+        vector_weights.append(1.0)
+
+    if query_text.strip():
+        query_vector = model.encoder.encode(
+            [f"query: {query_text.strip()}"],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )[0]
+        vector_parts.append(np.asarray(query_vector))
+        vector_weights.append(4.0)
+
+    if not vector_parts:
+        return np.zeros(len(products))
+    profile_vector = np.average(
+        np.stack(vector_parts),
+        axis=0,
+        weights=np.asarray(vector_weights),
+    )
+    norm = float(np.linalg.norm(profile_vector))
+    if norm:
+        profile_vector = profile_vector / norm
+    return _normalized_matrix_similarity(model, profile_vector)
+
+
+def _e5_behavior_similarity(
+    products: pd.DataFrame,
+    model: RecommendationModel,
+    positive_behavior: dict[str, float],
+) -> np.ndarray:
+    matrix = np.asarray(model.product_matrix)
+    product_positions = {
+        str(product_id): index
+        for index, product_id in enumerate(products["id"].tolist())
+    }
+    indices: list[int] = []
+    weights: list[float] = []
+    for product_id, weight in positive_behavior.items():
+        if product_id not in product_positions:
+            continue
+        indices.append(product_positions[product_id])
+        weights.append(max(1.0, min(8.0, float(weight))))
+    if not indices:
+        return np.zeros(len(products))
+    behavior_vector = np.average(
+        matrix[indices],
+        axis=0,
+        weights=np.asarray(weights),
+    )
+    norm = float(np.linalg.norm(behavior_vector))
+    if norm:
+        behavior_vector = behavior_vector / norm
+    return _normalized_matrix_similarity(model, behavior_vector)
+
+
 def _normalize(values: pd.Series) -> np.ndarray:
     minimum = float(values.min())
     maximum = float(values.max())
@@ -124,7 +221,16 @@ def recommend(
     interest_text = " ".join(interests * 3)
     favorite_text = " ".join(product_text(favorites).tolist())
     profile_text = f"{query_text} {interest_text} {favorite_text}".strip()
-    content_score = _text_similarity(model, profile_text)
+    if model.backend == "e5":
+        content_score = _e5_profile_similarity(
+            products,
+            model,
+            interests,
+            favorite_ids,
+            query_text,
+        )
+    else:
+        content_score = _text_similarity(model, profile_text)
 
     positive_behavior = {
         product_id: score
@@ -143,7 +249,13 @@ def recommend(
             continue
         repetitions = max(1, min(8, int(round(weight))))
         behavior_parts.extend(product_text(matched).tolist() * repetitions)
-    if behavior_parts:
+    if model.backend == "e5":
+        behavior_score = _e5_behavior_similarity(
+            products,
+            model,
+            positive_behavior,
+        )
+    elif behavior_parts:
         behavior_score = _text_similarity(model, " ".join(behavior_parts))
     else:
         behavior_score = np.zeros(len(products))

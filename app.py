@@ -431,6 +431,7 @@ def get_database(database_url: str) -> StoreDatabase:
     """Initialize the schema and catalog once per app process, not per click."""
     cached_database = StoreDatabase(database_url)
     cached_database.seed_products(get_products())
+    cached_database.catalog_snapshot = cached_database.load_products()
     return cached_database
 
 
@@ -449,13 +450,22 @@ except Exception:
 RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
 
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_database_products(
     database_url: str,
     _database: StoreDatabase,
 ) -> pd.DataFrame:
-    """Avoid an extra remote round trip during immediate widget reruns."""
-    return _database.load_products()
+    """Use the catalog fetched during process startup, outside click paths."""
+    return _database.catalog_snapshot.copy()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_storefront_snapshot(
+    database_url: str,
+    user_id: int,
+    _database: StoreDatabase,
+) -> dict:
+    return _database.load_storefront_snapshot(user_id)
 
 
 @st.cache_resource
@@ -809,19 +819,23 @@ def render_auth() -> None:
                 st.error(signup_error)
 
 
-def initialize_state() -> None:
+def initialize_state(snapshot: dict) -> None:
     user_id = int(st.session_state.user_id)
     if st.session_state.get("loaded_user_id") == user_id:
         return
-    profile = database.load_profile(user_id)
+    profile = snapshot["profile"]
     st.session_state.nickname = profile["nickname"]
     st.session_state.interests = profile["interests"]
     st.session_state.budget = profile["budget"]
     st.session_state.profile_nickname = profile["nickname"]
     st.session_state.profile_interests = profile["interests"]
     st.session_state.profile_budget = profile["budget"]
-    st.session_state.favorites = database.load_favorites(user_id)
-    st.session_state.cart = database.load_cart(user_id)
+    st.session_state.favorites = snapshot["favorites"]
+    st.session_state.cart = snapshot["cart"]
+    st.session_state.behavior_summary = snapshot["behavior_summary"]
+    st.session_state.behavior_weights = snapshot["behavior_weights"]
+    st.session_state.trend_scores = snapshot["trend_scores"]
+    st.session_state.purchased_ids = snapshot["purchased_ids"]
     st.session_state.last_order = None
     st.session_state.loaded_user_id = user_id
 
@@ -1032,7 +1046,12 @@ model = get_recommendation_model(
 CATEGORIES = sorted(products["category"].unique().tolist())
 MAX_PRICE = int(products["price"].max())
 
-initialize_state()
+storefront_snapshot = get_storefront_snapshot(
+    DATABASE_TARGET,
+    int(st.session_state.user_id),
+    database,
+)
+initialize_state(storefront_snapshot)
 current_user = st.session_state.get("current_user")
 if current_user is None:
     current_user = get_cached_user(
@@ -1041,11 +1060,7 @@ if current_user is None:
         database,
     )
     st.session_state.current_user = current_user
-behavior_summary = get_cached_behavior_summary(
-    DATABASE_TARGET,
-    int(st.session_state.user_id),
-    database,
-)
+behavior_summary = st.session_state.behavior_summary
 if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
 
@@ -1108,21 +1123,9 @@ with st.sidebar:
             if delete_error := st.session_state.get("delete_account_error"):
                 st.error(delete_error)
 
-behavior_weights = get_cached_behavior_weights(
-    DATABASE_TARGET,
-    int(st.session_state.user_id),
-    database,
-)
-trend_scores = get_cached_trend_scores(
-    DATABASE_TARGET,
-    7,
-    database,
-)
-purchased_ids = get_cached_purchased_ids(
-    DATABASE_TARGET,
-    int(st.session_state.user_id),
-    database,
-)
+behavior_weights = st.session_state.behavior_weights
+trend_scores = st.session_state.trend_scores
+purchased_ids = st.session_state.purchased_ids
 budget_min, budget_max = st.session_state.budget
 base_recommendations = recommend(
     products=products,
