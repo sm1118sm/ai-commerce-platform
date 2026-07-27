@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from src.database import StoreDatabase
@@ -22,6 +23,10 @@ APP_TEST_TIMEOUT_SECONDS = 120
 )
 class AppSmokeTest(unittest.TestCase):
     def setUp(self) -> None:
+        # AppTest cases share Streamlit's process cache. Production benefits
+        # from that cache, but tests reset the catalog and need a clean cache.
+        st.cache_data.clear()
+        st.cache_resource.clear()
         reset_test_database(StoreDatabase(TEST_DATABASE_URL))
 
     def test_auth_screen_renders(self) -> None:

@@ -445,8 +445,16 @@ except Exception:
         )
         st.stop()
     raise
-products = database.load_products()
 RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def get_database_products(
+    database_url: str,
+    _database: StoreDatabase,
+) -> pd.DataFrame:
+    """Avoid an extra remote round trip during immediate widget reruns."""
+    return _database.load_products()
 
 
 @st.cache_resource
@@ -456,20 +464,6 @@ def get_recommendation_model(
     _products: pd.DataFrame,
 ):
     return fit_recommender(_products, backend=backend)
-
-
-catalog_fingerprint = tuple(
-    products[["id", "name", "category", "description"]]
-    .astype(str)
-    .itertuples(index=False, name=None)
-)
-model = get_recommendation_model(
-    RECOMMENDER_BACKEND,
-    catalog_fingerprint,
-    products,
-)
-CATEGORIES = sorted(products["category"].unique().tolist())
-MAX_PRICE = int(products["price"].max())
 
 
 def initialize_auth() -> None:
@@ -841,6 +835,23 @@ initialize_auth()
 if not st.session_state.user_id:
     render_auth()
     st.stop()
+
+# Authentication actions do not need the catalog or the AI model. Loading
+# these only after login keeps duplicate checks and signup reruns lightweight.
+products = get_database_products(DATABASE_TARGET, database)
+catalog_fingerprint = tuple(
+    products[["id", "name", "category", "description"]]
+    .astype(str)
+    .itertuples(index=False, name=None)
+)
+model = get_recommendation_model(
+    RECOMMENDER_BACKEND,
+    catalog_fingerprint,
+    products,
+)
+CATEGORIES = sorted(products["category"].unique().tolist())
+MAX_PRICE = int(products["price"].max())
+
 initialize_state()
 current_user = database.get_user(int(st.session_state.user_id))
 behavior_summary = database.behavior_summary(int(st.session_state.user_id))
