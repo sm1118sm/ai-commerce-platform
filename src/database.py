@@ -269,7 +269,9 @@ class StoreDatabase:
                     self._mysql_pool = PooledDB(
                         creator=pymysql,
                         maxconnections=6,
-                        mincached=0,
+                        # Keep a second TLS connection ready for the asynchronous
+                        # login audit update and the immediately following page load.
+                        mincached=2,
                         maxcached=4,
                         blocking=True,
                         ping=1,
@@ -508,11 +510,14 @@ class StoreDatabase:
         email = "demo@stylepick.local"
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT id FROM users WHERE email = ?",
+                """
+                SELECT id, email, nickname, role, status, created_at, last_login_at
+                FROM users WHERE email = ?
+                """,
                 (email,),
             ).fetchone()
         if row:
-            return self.get_user(int(row["id"]))
+            return dict(row)
         return self.register_user(
             email,
             "Stylepick-demo!",
@@ -762,10 +767,54 @@ class StoreDatabase:
         product_id: str,
         session_id: str,
     ) -> int:
-        current = self.load_cart(user_id).get(product_id, 0)
-        quantity = current + 1
-        self.set_cart_quantity(user_id, product_id, quantity)
-        self.log_behavior(user_id, session_id, product_id, "CART_ADD")
+        if self.kind == "mysql":
+            cart_sql = """
+                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    quantity = VALUES(quantity),
+                    updated_at = VALUES(updated_at)
+            """
+        else:
+            cart_sql = """
+                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (user_id, product_id) DO UPDATE SET
+                    quantity = EXCLUDED.quantity,
+                    updated_at = EXCLUDED.updated_at
+            """
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT p.stock, COALESCE(c.quantity, 0) AS quantity
+                FROM products p
+                LEFT JOIN user_cart c
+                    ON c.product_id = p.product_id AND c.user_id = ?
+                WHERE p.product_id = ?
+                """,
+                (int(user_id), product_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("존재하지 않는 상품입니다.")
+            quantity = int(row["quantity"]) + 1
+            if quantity > min(10, int(row["stock"])):
+                raise ValueError(f"재고는 최대 {min(10, int(row['stock']))}개입니다.")
+            connection.execute(
+                cart_sql,
+                (
+                    int(user_id),
+                    product_id,
+                    quantity,
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+            self._log_behavior(
+                connection,
+                int(user_id),
+                session_id,
+                product_id,
+                "CART_ADD",
+            )
         return quantity
 
     def set_cart_quantity(

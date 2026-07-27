@@ -467,20 +467,192 @@ def get_recommendation_model(
     return fit_recommender(_products, backend=backend)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_user(
+    database_url: str,
+    user_id: int,
+    _database: StoreDatabase,
+) -> dict:
+    return _database.get_user(user_id)
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def get_cached_behavior_summary(
+    database_url: str,
+    user_id: int,
+    _database: StoreDatabase,
+) -> dict:
+    return _database.behavior_summary(user_id)
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def get_cached_behavior_weights(
+    database_url: str,
+    user_id: int,
+    _database: StoreDatabase,
+) -> dict:
+    return _database.user_behavior_weights(user_id)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_trend_scores(
+    database_url: str,
+    days: int,
+    _database: StoreDatabase,
+) -> dict:
+    return _database.trend_scores(days=days)
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def get_cached_purchased_ids(
+    database_url: str,
+    user_id: int,
+    _database: StoreDatabase,
+) -> set[str]:
+    return _database.purchased_product_ids(user_id)
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def get_cached_order_history(
+    database_url: str,
+    user_id: int,
+    limit: int,
+    _database: StoreDatabase,
+) -> list[dict]:
+    return _database.list_orders(user_id, limit=limit)
+
+
 def initialize_auth() -> None:
     if "session_id" not in st.session_state:
         st.session_state.session_id = f"session_{uuid4().hex[:12]}"
     if "user_id" not in st.session_state:
         st.session_state.user_id = None
     if os.environ.get("STYLEPICK_TEST_AUTOLOGIN") == "1" and not st.session_state.user_id:
-        demo = database.ensure_demo_user()
-        st.session_state.user_id = int(demo["id"])
+        login_user(database.ensure_demo_user())
 
 
 def login_user(user: dict) -> None:
     st.session_state.user_id = int(user["id"])
+    st.session_state.current_user = user
     st.session_state.loaded_user_id = None
     st.session_state.last_order = None
+
+
+def submit_login() -> None:
+    st.session_state.pop("login_error", None)
+    try:
+        login_user(
+            database.authenticate(
+                st.session_state.get("login_email", ""),
+                st.session_state.get("login_password", ""),
+            )
+        )
+        st.session_state.auth_notice = (
+            "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
+        )
+    except ValueError as error:
+        st.session_state.login_error = str(error)
+
+
+def start_demo() -> None:
+    login_user(database.ensure_demo_user())
+
+
+def submit_signup() -> None:
+    st.session_state.pop("signup_error", None)
+    signup_password = st.session_state.get("signup_password", "")
+    signup_confirm = st.session_state.get("signup_confirm", "")
+    if signup_password != signup_confirm:
+        st.session_state.signup_error = "비밀번호 확인이 일치하지 않습니다."
+        return
+    try:
+        user = database.register_user(
+            st.session_state.get("signup_email", ""),
+            signup_password,
+            st.session_state.get("signup_nickname", ""),
+            st.session_state.get("signup_phone", ""),
+        )
+        login_user(user)
+        st.session_state.auth_notice = (
+            "회원가입 정보가 DB에 저장되고 로그인되었습니다."
+        )
+    except ValueError as error:
+        st.session_state.signup_error = str(error)
+
+
+def logout_user() -> None:
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
+
+def delete_current_user() -> None:
+    st.session_state.pop("delete_account_error", None)
+    try:
+        database.delete_user(
+            int(st.session_state.user_id),
+            st.session_state.get("delete_account_password", ""),
+        )
+    except ValueError as error:
+        st.session_state.delete_account_error = str(error)
+        return
+    logout_user()
+    st.session_state.account_deleted_notice = True
+
+
+def save_profile_settings() -> None:
+    st.session_state.pop("profile_error", None)
+    try:
+        saved_nickname = (
+            st.session_state.get("profile_nickname", "").strip() or "게스트"
+        )
+        interests = list(st.session_state.get("profile_interests", []))
+        budget = tuple(st.session_state.get("profile_budget", (0, 250_000)))
+        database.save_profile(
+            int(st.session_state.user_id),
+            saved_nickname,
+            interests,
+            budget,
+        )
+        st.session_state.nickname = saved_nickname
+        st.session_state.interests = interests
+        st.session_state.budget = budget
+        if st.session_state.get("current_user"):
+            st.session_state.current_user["nickname"] = saved_nickname
+        get_cached_user.clear()
+        st.session_state.profile_saved_notice = True
+    except ValueError as error:
+        st.session_state.profile_error = str(error)
+
+
+def check_signup_email_availability() -> None:
+    st.session_state.pop("signup_email_error", None)
+    email = st.session_state.get("signup_email", "")
+    st.session_state.checked_signup_email = normalize_email(email)
+    try:
+        if database.email_is_available(email):
+            st.session_state.verified_signup_email = normalize_email(email)
+        else:
+            st.session_state.verified_signup_email = None
+            st.session_state.signup_email_error = "이미 가입된 이메일입니다."
+    except ValueError as error:
+        st.session_state.verified_signup_email = None
+        st.session_state.signup_email_error = str(error)
+
+
+def check_signup_nickname_availability() -> None:
+    st.session_state.pop("signup_nickname_error", None)
+    nickname = st.session_state.get("signup_nickname", "")
+    normalized_nickname = normalize_nickname(nickname).casefold()
+    st.session_state.checked_signup_nickname = normalized_nickname
+    try:
+        if database.nickname_is_available(nickname):
+            st.session_state.verified_signup_nickname = normalized_nickname
+        else:
+            st.session_state.verified_signup_nickname = None
+            st.session_state.signup_nickname_error = "이미 사용 중인 닉네임입니다."
+    except ValueError as error:
+        st.session_state.verified_signup_nickname = None
+        st.session_state.signup_nickname_error = str(error)
 
 
 def format_signup_phone() -> None:
@@ -527,25 +699,25 @@ def render_auth() -> None:
         login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
         with login_tab:
             with st.form("login_form"):
-                email = st.text_input("이메일", placeholder="name@example.com")
-                password = st.text_input("비밀번호", type="password")
-                submitted = st.form_submit_button(
+                st.text_input(
+                    "이메일",
+                    placeholder="name@example.com",
+                    key="login_email",
+                )
+                st.text_input("비밀번호", type="password", key="login_password")
+                st.form_submit_button(
                     "로그인",
                     type="primary",
                     width="stretch",
+                    on_click=submit_login,
                 )
-                if submitted:
-                    try:
-                        login_user(database.authenticate(email, password))
-                        st.session_state.auth_notice = (
-                            "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
-                        )
-                        st.rerun()
-                    except ValueError as error:
-                        st.error(str(error))
-            if st.button("데모 계정으로 바로 시작", width="stretch"):
-                login_user(database.ensure_demo_user())
-                st.rerun()
+            if login_error := st.session_state.get("login_error"):
+                st.error(login_error)
+            st.button(
+                "데모 계정으로 바로 시작",
+                width="stretch",
+                on_click=start_demo,
+            )
             st.caption("데모 계정은 로컬 시연용이며 실제 결제는 발생하지 않습니다.")
         with signup_tab:
             signup_email = st.text_input(
@@ -553,23 +725,12 @@ def render_auth() -> None:
                 key="signup_email",
                 max_chars=120,
             )
-            if st.button(
+            st.button(
                 "이메일 중복 확인",
                 key="check_signup_email",
                 width="stretch",
-            ):
-                with st.spinner("이메일을 확인하고 있어요..."):
-                    try:
-                        if database.email_is_available(signup_email):
-                            st.session_state.verified_signup_email = (
-                                normalize_email(signup_email)
-                            )
-                        else:
-                            st.session_state.verified_signup_email = None
-                            st.error("이미 가입된 이메일입니다.")
-                    except ValueError as error:
-                        st.session_state.verified_signup_email = None
-                        st.error(str(error))
+                on_click=check_signup_email_availability,
+            )
             email_verified = (
                 bool(signup_email.strip())
                 and st.session_state.get("verified_signup_email")
@@ -577,6 +738,12 @@ def render_auth() -> None:
             )
             if email_verified:
                 st.success("사용 가능한 이메일입니다.")
+            elif (
+                st.session_state.get("checked_signup_email")
+                == normalize_email(signup_email)
+                and (email_error := st.session_state.get("signup_email_error"))
+            ):
+                st.error(email_error)
             else:
                 st.caption("이메일 중복 확인이 필요합니다.")
 
@@ -585,23 +752,12 @@ def render_auth() -> None:
                 key="signup_nickname",
                 max_chars=30,
             )
-            if st.button(
+            st.button(
                 "닉네임 중복 확인",
                 key="check_signup_nickname",
                 width="stretch",
-            ):
-                with st.spinner("닉네임을 확인하고 있어요..."):
-                    try:
-                        if database.nickname_is_available(signup_nickname):
-                            st.session_state.verified_signup_nickname = (
-                                normalize_nickname(signup_nickname).casefold()
-                            )
-                        else:
-                            st.session_state.verified_signup_nickname = None
-                            st.error("이미 사용 중인 닉네임입니다.")
-                    except ValueError as error:
-                        st.session_state.verified_signup_nickname = None
-                        st.error(str(error))
+                on_click=check_signup_nickname_availability,
+            )
             nickname_verified = (
                 bool(signup_nickname.strip())
                 and st.session_state.get("verified_signup_nickname")
@@ -609,17 +765,26 @@ def render_auth() -> None:
             )
             if nickname_verified:
                 st.success("사용 가능한 닉네임입니다.")
+            elif (
+                st.session_state.get("checked_signup_nickname")
+                == normalize_nickname(signup_nickname).casefold()
+                and (
+                    nickname_error
+                    := st.session_state.get("signup_nickname_error")
+                )
+            ):
+                st.error(nickname_error)
             else:
                 st.caption("닉네임 중복 확인이 필요합니다.")
 
-            signup_phone = st.text_input(
+            st.text_input(
                 "전화번호",
                 key="signup_phone",
                 placeholder="010-1234-5678",
                 max_chars=20,
                 on_change=format_signup_phone,
             )
-            signup_password = st.text_input(
+            st.text_input(
                 "비밀번호",
                 type="password",
                 key="signup_password",
@@ -628,44 +793,20 @@ def render_auth() -> None:
                 "8자 이상 · 영문 대문자 1개 이상 · 특수문자 1개 이상"
             )
             st.caption(f"허용 특수문자: {PASSWORD_SPECIAL_CHARACTERS}")
-            signup_confirm = st.text_input(
+            st.text_input(
                 "비밀번호 확인",
                 type="password",
                 key="signup_confirm",
             )
-            signup_submitted = st.button(
+            st.button(
                 "회원가입",
                 type="primary",
                 width="stretch",
                 disabled=not (email_verified and nickname_verified),
+                on_click=submit_signup,
             )
-            if signup_submitted:
-                if signup_password != signup_confirm:
-                    st.error("비밀번호 확인이 일치하지 않습니다.")
-                else:
-                    with st.spinner("계정을 안전하게 만들고 있어요..."):
-                        try:
-                            created_user = database.register_user(
-                                signup_email,
-                                signup_password,
-                                signup_nickname,
-                                signup_phone,
-                            )
-                            user = database.authenticate(
-                                signup_email,
-                                signup_password,
-                            )
-                            if int(user["id"]) != int(created_user["id"]):
-                                raise ValueError(
-                                    "회원가입 정보 저장을 확인하지 못했습니다."
-                                )
-                            login_user(user)
-                            st.session_state.auth_notice = (
-                                "회원가입 정보가 DB에 저장되고 로그인되었습니다."
-                            )
-                            st.rerun()
-                        except ValueError as error:
-                            st.error(str(error))
+            if signup_error := st.session_state.get("signup_error"):
+                st.error(signup_error)
 
 
 def initialize_state() -> None:
@@ -676,6 +817,9 @@ def initialize_state() -> None:
     st.session_state.nickname = profile["nickname"]
     st.session_state.interests = profile["interests"]
     st.session_state.budget = profile["budget"]
+    st.session_state.profile_nickname = profile["nickname"]
+    st.session_state.profile_interests = profile["interests"]
+    st.session_state.profile_budget = profile["budget"]
     st.session_state.favorites = database.load_favorites(user_id)
     st.session_state.cart = database.load_cart(user_id)
     st.session_state.last_order = None
@@ -688,26 +832,50 @@ def toggle_favorite(product_id: str) -> None:
         product_id,
         st.session_state.session_id,
     )
-    st.session_state.favorites = database.load_favorites(
-        int(st.session_state.user_id)
-    )
     if added:
+        st.session_state.favorites.add(product_id)
         st.toast("관심 상품으로 저장했어요. 추천에 반영됩니다.")
     else:
+        st.session_state.favorites.discard(product_id)
         st.toast("찜 목록에서 제거했어요.")
 
 
 def add_to_cart(product_id: str) -> None:
     try:
-        database.add_to_cart(
+        quantity = database.add_to_cart(
             int(st.session_state.user_id),
             product_id,
             st.session_state.session_id,
         )
-        st.session_state.cart = database.load_cart(int(st.session_state.user_id))
+        st.session_state.cart[product_id] = quantity
         st.toast("장바구니에 담았습니다.")
     except ValueError as error:
         st.error(str(error))
+
+
+def remove_from_cart(product_id: str) -> None:
+    database.remove_cart_item(
+        int(st.session_state.user_id),
+        product_id,
+        st.session_state.session_id,
+    )
+    st.session_state.cart.pop(product_id, None)
+
+
+def complete_order() -> None:
+    st.session_state.pop("checkout_error", None)
+    try:
+        st.session_state.last_order = database.create_order(
+            int(st.session_state.user_id),
+            st.session_state.session_id,
+        )
+        st.session_state.cart = {}
+    except ValueError as error:
+        st.session_state.checkout_error = str(error)
+
+
+def reset_last_order() -> None:
+    st.session_state.last_order = None
 
 
 @st.dialog("상품 상세")
@@ -728,18 +896,22 @@ def product_detail(product_id: str) -> None:
     favorite_label = (
         "찜 해제" if product_id in st.session_state.favorites else "♡ 찜하기"
     )
-    if left.button(favorite_label, key=f"dialog_fav_{product_id}", width="stretch"):
-        toggle_favorite(product_id)
-        st.rerun()
-    if right.button(
+    left.button(
+        favorite_label,
+        key=f"dialog_fav_{product_id}",
+        width="stretch",
+        on_click=toggle_favorite,
+        args=(product_id,),
+    )
+    right.button(
         "품절" if int(product["stock"]) <= 0 else "장바구니 담기",
         key=f"dialog_cart_{product_id}",
         type="primary",
         width="stretch",
         disabled=int(product["stock"]) <= 0,
-    ):
-        add_to_cart(product_id)
-        st.rerun()
+        on_click=add_to_cart,
+        args=(product_id,),
+    )
 
 
 def product_card(product: pd.Series, key_prefix: str, reason: str | None = None) -> None:
@@ -782,22 +954,22 @@ def product_card(product: pd.Series, key_prefix: str, reason: str | None = None)
         )
         product_detail(str(product["id"]))
     favorite_icon = "♥" if product["id"] in st.session_state.favorites else "♡"
-    if favorite_col.button(
+    favorite_col.button(
         favorite_icon,
         key=f"{key_prefix}_favorite_{product['id']}",
         width="stretch",
-    ):
-        toggle_favorite(str(product["id"]))
-        st.rerun()
-    if cart_col.button(
+        on_click=toggle_favorite,
+        args=(str(product["id"]),),
+    )
+    cart_col.button(
         "품절" if int(product["stock"]) <= 0 else "담기",
         key=f"{key_prefix}_cart_{product['id']}",
         type="primary",
         width="stretch",
         disabled=int(product["stock"]) <= 0,
-    ):
-        add_to_cart(str(product["id"]))
-        st.rerun()
+        on_click=add_to_cart,
+        args=(str(product["id"]),),
+    )
 
 
 def product_grid(
@@ -861,8 +1033,19 @@ CATEGORIES = sorted(products["category"].unique().tolist())
 MAX_PRICE = int(products["price"].max())
 
 initialize_state()
-current_user = database.get_user(int(st.session_state.user_id))
-behavior_summary = database.behavior_summary(int(st.session_state.user_id))
+current_user = st.session_state.get("current_user")
+if current_user is None:
+    current_user = get_cached_user(
+        DATABASE_TARGET,
+        int(st.session_state.user_id),
+        database,
+    )
+    st.session_state.current_user = current_user
+behavior_summary = get_cached_behavior_summary(
+    DATABASE_TARGET,
+    int(st.session_state.user_id),
+    database,
+)
 if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
 
@@ -870,50 +1053,45 @@ with st.sidebar:
     st.caption(f"로그인: {current_user['email']}")
     st.header("👤 나의 취향 설정")
     with st.form("profile_form"):
-        nickname = st.text_input("닉네임", value=st.session_state.nickname)
-        interests = st.multiselect(
+        st.text_input(
+            "닉네임",
+            key="profile_nickname",
+        )
+        st.multiselect(
             "관심 카테고리",
             CATEGORIES,
-            default=st.session_state.interests,
             max_selections=3,
+            key="profile_interests",
         )
-        budget = st.slider(
+        st.slider(
             "관심 가격대",
             min_value=0,
             max_value=MAX_PRICE,
-            value=st.session_state.budget,
             step=5_000,
             format="%d원",
+            key="profile_budget",
         )
-        if st.form_submit_button("취향 저장", type="primary", width="stretch"):
-            try:
-                saved_nickname = nickname.strip() or "게스트"
-                database.save_profile(
-                    int(st.session_state.user_id),
-                    saved_nickname,
-                    list(interests),
-                    tuple(budget),
-                )
-                st.session_state.nickname = saved_nickname
-                st.session_state.interests = interests
-                st.session_state.budget = budget
-                st.toast("취향이 추천에 반영됐어요.")
-            except ValueError as error:
-                st.error(str(error))
+        st.form_submit_button(
+            "취향 저장",
+            type="primary",
+            width="stretch",
+            on_click=save_profile_settings,
+        )
+    if st.session_state.pop("profile_saved_notice", False):
+        st.toast("취향이 추천에 반영됐어요.")
+    if profile_error := st.session_state.get("profile_error"):
+        st.error(profile_error)
     st.divider()
     st.metric("찜한 상품", len(st.session_state.favorites))
     st.metric("장바구니 수량", sum(st.session_state.cart.values()))
     st.caption(
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
     )
-    if st.button("로그아웃", width="stretch"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
+    st.button("로그아웃", width="stretch", on_click=logout_user)
     with st.expander("회원탈퇴"):
         st.warning("탈퇴하면 계정, 취향, 찜, 장바구니, 행동 및 주문 데이터가 즉시 삭제됩니다.")
         with st.form("delete_account_form"):
-            delete_password = st.text_input(
+            st.text_input(
                 "현재 비밀번호",
                 type="password",
                 key="delete_account_password",
@@ -921,29 +1099,29 @@ with st.sidebar:
             delete_confirmed = st.checkbox(
                 "삭제된 데이터는 복구할 수 없음을 확인했습니다."
             )
-            if st.form_submit_button(
+            st.form_submit_button(
                 "계정 영구 삭제",
                 disabled=not delete_confirmed,
                 width="stretch",
-            ):
-                try:
-                    database.delete_user(
-                        int(st.session_state.user_id),
-                        delete_password,
-                    )
-                    for key in list(st.session_state.keys()):
-                        del st.session_state[key]
-                    st.session_state.account_deleted_notice = True
-                    st.rerun()
-                except ValueError as error:
-                    st.error(str(error))
+                on_click=delete_current_user,
+            )
+            if delete_error := st.session_state.get("delete_account_error"):
+                st.error(delete_error)
 
-behavior_weights = database.user_behavior_weights(
-    int(st.session_state.user_id)
+behavior_weights = get_cached_behavior_weights(
+    DATABASE_TARGET,
+    int(st.session_state.user_id),
+    database,
 )
-trend_scores = database.trend_scores(days=7)
-purchased_ids = database.purchased_product_ids(
-    int(st.session_state.user_id)
+trend_scores = get_cached_trend_scores(
+    DATABASE_TARGET,
+    7,
+    database,
+)
+purchased_ids = get_cached_purchased_ids(
+    DATABASE_TARGET,
+    int(st.session_state.user_id),
+    database,
 )
 budget_min, budget_max = st.session_state.budget
 base_recommendations = recommend(
@@ -1200,9 +1378,7 @@ with cart_tab:
         order_col2.metric("결제 금액", f"{order['total']:,}원")
         order_col3.metric("상품 수량", order["quantity"])
         st.caption(f"주문 시각: {order['ordered_at']} · 실제 결제는 발생하지 않았습니다.")
-        if st.button("새 쇼핑 계속하기"):
-            st.session_state.last_order = None
-            st.rerun()
+        st.button("새 쇼핑 계속하기", on_click=reset_last_order)
 
     cart_items = products[products["id"].isin(st.session_state.cart)]
     if cart_items.empty and not st.session_state.last_order:
@@ -1219,16 +1395,12 @@ with cart_tab:
             if available <= 0:
                 quantity_col.error("품절")
                 price_col.write("-")
-                if delete_col.button("삭제", key=f"delete_soldout_{product_id}"):
-                    database.remove_cart_item(
-                        int(st.session_state.user_id),
-                        product_id,
-                        st.session_state.session_id,
-                    )
-                    st.session_state.cart = database.load_cart(
-                        int(st.session_state.user_id)
-                    )
-                    st.rerun()
+                delete_col.button(
+                    "삭제",
+                    key=f"delete_soldout_{product_id}",
+                    on_click=remove_from_cart,
+                    args=(product_id,),
+                )
                 continue
             current_quantity = min(
                 int(st.session_state.cart[product_id]),
@@ -1252,38 +1424,31 @@ with cart_tab:
             line_total = int(item["price"]) * int(quantity)
             total += line_total
             price_col.write(f"**{line_total:,}원**")
-            if delete_col.button("삭제", key=f"delete_{product_id}"):
-                database.remove_cart_item(
-                    int(st.session_state.user_id),
-                    product_id,
-                    st.session_state.session_id,
-                )
-                del st.session_state.cart[product_id]
-                st.rerun()
+            delete_col.button(
+                "삭제",
+                key=f"delete_{product_id}",
+                on_click=remove_from_cart,
+                args=(product_id,),
+            )
             st.divider()
 
         summary_col, checkout_col = st.columns([2, 1])
         summary_col.metric("모의 결제 합계", f"{total:,}원")
         summary_col.caption("최종 금액과 재고는 주문 시 서버에서 다시 검증합니다.")
-        if checkout_col.button(
+        checkout_col.button(
             "모의 주문 완료",
             type="primary",
             width="stretch",
-        ):
-            try:
-                st.session_state.last_order = database.create_order(
-                    int(st.session_state.user_id),
-                    st.session_state.session_id,
-                )
-                st.session_state.cart = {}
-                st.balloons()
-                st.rerun()
-            except ValueError as error:
-                st.error(str(error))
+            on_click=complete_order,
+        )
+        if checkout_error := st.session_state.get("checkout_error"):
+            st.error(checkout_error)
 
-    order_history = database.list_orders(
+    order_history = get_cached_order_history(
+        DATABASE_TARGET,
         int(st.session_state.user_id),
-        limit=5,
+        5,
+        database,
     )
     if order_history:
         with st.expander("최근 모의 주문 내역"):

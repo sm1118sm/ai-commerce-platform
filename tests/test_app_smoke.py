@@ -128,6 +128,58 @@ class AppSmokeTest(unittest.TestCase):
                 ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"],
             )
 
+    def test_login_and_logout_callbacks_change_screen_once(self) -> None:
+        database = StoreDatabase(TEST_DATABASE_URL)
+        database.register_user(
+            "callback-login@example.com",
+            "Callback-test!",
+            "콜백로그인",
+            "010-8765-4321",
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": TEST_DATABASE_URL,
+                "RECOMMENDER_BACKEND": "tfidf",
+            },
+            clear=False,
+        ):
+            os.environ.pop("STYLEPICK_TEST_AUTOLOGIN", None)
+            app = AppTest.from_file(
+                str(ROOT / "app.py"),
+                default_timeout=APP_TEST_TIMEOUT_SECONDS,
+            ).run()
+            next(
+                field for field in app.text_input
+                if field.key == "login_email"
+            ).input("callback-login@example.com")
+            next(
+                field for field in app.text_input
+                if field.key == "login_password"
+            ).input("Callback-test!")
+            next(
+                button for button in app.button
+                if button.label == "로그인"
+            ).click().run()
+
+            self.assertFalse(app.exception)
+            self.assertIsNotNone(app.session_state["user_id"])
+            self.assertEqual(
+                [tab.label for tab in app.tabs],
+                ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"],
+            )
+
+            next(
+                button for button in app.button
+                if button.label == "로그아웃"
+            ).click().run()
+            self.assertFalse(app.exception)
+            self.assertIsNone(app.session_state["user_id"])
+            self.assertEqual(
+                [tab.label for tab in app.tabs],
+                ["로그인", "회원가입"],
+            )
+
     def test_cart_can_complete_demo_order(self) -> None:
         with patch.dict(
             os.environ,

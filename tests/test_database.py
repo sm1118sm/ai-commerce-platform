@@ -147,7 +147,14 @@ class DatabaseTest(unittest.TestCase):
         )
         self.assertEqual(database.load_favorites(user_id), {"P001"})
 
-        database.set_cart_quantity(user_id, "P002", 2)
+        self.assertEqual(
+            database.add_to_cart(user_id, "P002", "test-session"),
+            1,
+        )
+        self.assertEqual(
+            database.add_to_cart(user_id, "P002", "test-session"),
+            2,
+        )
         self.assertEqual(database.load_cart(user_id), {"P002": 2})
 
         order = database.create_order(user_id, "test-session")
