@@ -6,7 +6,26 @@
 - GitHub: `https://github.com/sm1118sm/ai-commerce-platform`
 - 기본 브랜치: `main`
 - 배포 앱: `https://ai-commerce-platform-5ovk.onrender.com`
-- 운영 DB: 외부 관리형 MySQL 8 (`DATABASE_URL`은 Render 환경변수로만 관리)
+- 운영 DB: Aiven MySQL 8.4 무료 플랜
+- Aiven 프로젝트: `stylepick-ai-commerce`
+- Aiven 서비스: `mysql-138ce16`
+- DB 이름: `defaultdb`
+- DB 비밀정보: 로컬 `.env`와 Render Secret에만 저장
+
+## 2026-07-27까지 완료한 내용
+
+- 2030 이용자를 위한 상품 30개와 이커머스형 홈 화면
+- 데스크톱·모바일 반응형 UI, 상품 카드와 개인화 추천 진열 영역
+- TF-IDF/E5 하이브리드 추천, 최근 행동·관심사·예산·인기도 반영
+- 이메일·닉네임·전화번호 중복 차단과 안전한 비밀번호 해시
+- 회원별 찜·장바구니·주문·행동 로그 분리, 회원탈퇴 연쇄 삭제
+- MySQL/PostgreSQL DB 어댑터와 운영 오류 상세정보 숨김
+- Aiven MySQL TLS 연결, 스키마 생성, 상품 30개 시드 검증
+- Aiven에서 임시 회원 가입·로그인·중복 차단·탈퇴 실연결 검증
+- 모든 GitHub 변경을 기능 브랜치 → PR → CI → `main` 병합으로 관리
+
+현재 배포 복구 작업은 PR #6에서 진행한다. 병합 후 Render의
+`DATABASE_URL`을 Aiven Service URI로 설정하고 공개 주소에서 최종 확인한다.
 
 ## 노트북을 종료하기 전
 
@@ -58,12 +77,13 @@ code .
 
 ```bash
 cd /mnt/c/Users/sm222/Documents/Codex/2026-07-27/ai-commerce-platform
-cp .env.example .env
 docker compose up --build
 ```
 
-브라우저에서 `http://localhost:8501`에 접속한다. 로컬 MySQL 데이터는 Docker
-볼륨에 보관하며 운영 DB 비밀번호를 PC나 GitHub에 저장하지 않는다.
+브라우저에서 `http://localhost:8501`에 접속한다. 현재 PC의 Git 제외 `.env`에는
+Aiven URI가 있으므로 로컬 앱과 Render가 같은 회원·행동·주문 데이터를 본다.
+새 PC에서는 `.env.example`을 `.env`로 복사하면 로컬 Docker MySQL을 사용하며,
+공용 Aiven을 사용하려면 URI를 별도로 안전하게 입력해야 한다.
 
 실행을 멈추려면 터미널에서 `Ctrl+C`를 누르고 다음 명령을 실행한다.
 
@@ -101,6 +121,7 @@ docker compose up --build
 ## 주의사항
 
 - `DATABASE_URL`, DB 비밀번호, `.env` 파일은 채팅이나 GitHub에 올리지 않는다.
+- Aiven Service URI의 비밀번호를 스크린샷에 노출하지 않는다.
 - 작업 시작 전 `main`을 최신화하고 새 기능 브랜치를 만든다.
 - 작업 종료 시 기능 브랜치를 push하고 PR과 CI를 거쳐 `main`에 병합한다.
 - Render 배포는 PR이 `main`에 병합되면 자동으로 시작된다.

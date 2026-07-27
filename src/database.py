@@ -93,8 +93,16 @@ def parse_mysql_url(database_url: str) -> dict:
     }
     if "ssl_ca" in options:
         connect_args["ssl"] = {"ca": options["ssl_ca"][-1]}
-    elif options.get("ssl", [""])[-1].lower() in {"1", "true", "required"}:
-        connect_args["ssl"] = {}
+    else:
+        ssl_mode = options.get(
+            "ssl-mode",
+            options.get("sslmode", options.get("ssl", [""])),
+        )[-1].lower()
+        if ssl_mode in {"1", "true", "require", "required"}:
+            # PyMySQL treats an empty dict as SSL disabled. A non-empty
+            # configuration enables encrypted transport while matching MySQL's
+            # REQUIRED mode, which does not require CA/hostname verification.
+            connect_args["ssl"] = {"check_hostname": False}
     return connect_args
 
 

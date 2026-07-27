@@ -17,7 +17,7 @@
 - 데이터가 없는 사용자를 위한 콜드 스타트 추천
 - 실제 결제가 발생하지 않는 모의 주문 완료
 - MySQL 8 기반 회원·상품·재고·주문 트랜잭션
-- 로컬 MySQL과 Render PostgreSQL을 지원하는 이중 DB 어댑터
+- 로컬 MySQL·외부 관리형 MySQL·PostgreSQL을 지원하는 DB 어댑터
 
 ## 누구나 실행하는 가장 쉬운 방법
 
@@ -82,12 +82,17 @@ docker compose down --volumes
 cp .env.example .env
 ```
 
-`.env`에는 로컬 개발용 값만 사용하고 실제 운영 비밀번호는 GitHub에
-커밋하지 않습니다.
+`.env`에는 비밀값이 들어가므로 GitHub에 커밋하지 않습니다. `DATABASE_URL`을
+비워두면 로컬 Docker MySQL을 사용합니다. Aiven Service URI를 넣으면 로컬
+앱과 Render가 같은 관리형 MySQL을 사용하므로 어느 주소에서 가입해도 동일한
+회원·행동·장바구니·주문 데이터가 보입니다.
 
-로컬 Docker는 MySQL을 기본으로 사용합니다. 공개 Render 서비스는 Render의
-관리형 PostgreSQL을 사용하며, 회원·상품·행동·장바구니·주문 기능은 동일한
-DB 어댑터와 테스트를 거칩니다.
+```dotenv
+DATABASE_URL=mysql://avnadmin:URL인코딩된비밀번호@호스트:포트/defaultdb?ssl-mode=REQUIRED
+```
+
+Render에는 같은 값을 웹 서비스의 Secret 환경변수로 등록합니다. 실제 URI나
+비밀번호는 `.env.example`, 문서, GitHub 이슈 또는 PR에 기록하지 않습니다.
 
 ### MySQL 회원 데이터 확인
 

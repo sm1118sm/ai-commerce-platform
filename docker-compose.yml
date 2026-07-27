@@ -29,7 +29,7 @@ services:
     build: .
     environment:
       APP_ENV: development
-      DATABASE_URL: mysql://${MYSQL_USER:-stylepick}:${MYSQL_PASSWORD:-stylepick_dev_password}@mysql:3306/${MYSQL_DATABASE:-stylepick}
+      DATABASE_URL: ${DATABASE_URL:-mysql://${MYSQL_USER:-stylepick}:${MYSQL_PASSWORD:-stylepick_dev_password}@mysql:3306/${MYSQL_DATABASE:-stylepick}}
       DEMO_MODE: "true"
       RECOMMENDER_BACKEND: ${RECOMMENDER_BACKEND:-e5}
     ports:

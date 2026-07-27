@@ -6,7 +6,7 @@
 - `docker-compose.yml`: 로컬 앱과 MySQL 8 실행
 - `render.yaml`: Render 웹 서비스 설정
 - `database/mysql_schema.sql`: 로컬 Docker용 MySQL 8 스키마
-- `database/postgres_schema.sql`: Render 운영용 PostgreSQL 스키마
+- `database/postgres_schema.sql`: 선택 가능한 PostgreSQL 스키마
 - `scripts/migrate_sqlite_to_mysql.py`: 기존 SQLite 데이터 이전
 - `/_stcore/health`: 배포 상태 확인 경로
 
@@ -28,8 +28,8 @@ docker compose down
 
 ## 2. 운영 데이터베이스 준비
 
-Render 기본 배포는 관리형 PostgreSQL을 사용한다. 별도 관리형 MySQL을
-선택한 경우에도 동일한 앱을 사용할 수 있다. 다음 정보를 확인한다.
+Aiven 같은 외부 관리형 MySQL을 준비하면 로컬 앱과 Render가 하나의 DB를
+공유할 수 있다. 다음 정보를 확인한다.
 
 - 호스트
 - 포트(기본값 `3306`)
@@ -40,7 +40,7 @@ Render 기본 배포는 관리형 PostgreSQL을 사용한다. 별도 관리형 M
 접속 주소 형식:
 
 ```text
-mysql://사용자명:비밀번호@호스트:3306/데이터베이스명?ssl=true
+mysql://사용자명:비밀번호@호스트:포트/데이터베이스명?ssl-mode=REQUIRED
 postgresql://사용자명:비밀번호@호스트:5432/데이터베이스명
 ```
 
@@ -60,6 +60,11 @@ postgresql://사용자명:비밀번호@호스트:5432/데이터베이스명
 MySQL을 선택하면 Render가 관리형 MySQL을 직접 생성하지 않으므로 외부
 MySQL을 먼저 준비해야 한다. `DATABASE_URL`을 YAML이나 GitHub에 직접 넣지
 않는다.
+
+로컬에서도 같은 관리형 MySQL을 사용하려면 Git에서 제외된 `.env`에 동일한
+`DATABASE_URL`을 저장하고 `docker compose up -d --build`를 실행한다.
+Aiven 무료 서비스는 비활성 상태에서 자동으로 정지되므로 첫 접속이 평소보다
+느릴 수 있다.
 
 ## 4. 기존 SQLite 데이터를 옮길 경우
 
