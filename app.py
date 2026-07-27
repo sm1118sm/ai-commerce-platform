@@ -1025,13 +1025,8 @@ def section_heading(kicker: str, title: str, description: str) -> None:
     )
 
 
-initialize_auth()
-if not st.session_state.user_id:
-    render_auth()
-    st.stop()
-
-# Authentication actions do not need the catalog or the AI model. Loading
-# these only after login keeps duplicate checks and signup reruns lightweight.
+# Warm the catalog and E5 model before showing authentication. Render cold-start
+# time may increase, but login and every later widget rerun stay on the fast path.
 products = get_database_products(DATABASE_TARGET, database)
 catalog_fingerprint = tuple(
     products[["id", "name", "category", "description"]]
@@ -1045,6 +1040,11 @@ model = get_recommendation_model(
 )
 CATEGORIES = sorted(products["category"].unique().tolist())
 MAX_PRICE = int(products["price"].max())
+
+initialize_auth()
+if not st.session_state.user_id:
+    render_auth()
+    st.stop()
 
 storefront_snapshot = get_storefront_snapshot(
     DATABASE_TARGET,
@@ -1261,7 +1261,28 @@ with shop_tab:
     sort_column, ascending = sort_rules[sort_option]
     filtered = filtered.sort_values(sort_column, ascending=ascending)
     st.caption(f"{len(filtered)}개 상품")
-    product_grid(filtered, "shop")
+    catalog_page_size = 9
+    catalog_page_count = max(
+        1,
+        (len(filtered) + catalog_page_size - 1) // catalog_page_size,
+    )
+    catalog_filter_key = (
+        query.strip().casefold(),
+        tuple(sorted(selected_categories)),
+        tuple(price_range),
+        sort_option,
+    )
+    catalog_page = st.selectbox(
+        "상품 페이지",
+        options=list(range(catalog_page_count)),
+        format_func=lambda page: f"{page + 1} / {catalog_page_count} 페이지",
+        key=f"catalog_page_{hash(catalog_filter_key)}",
+    )
+    catalog_start = int(catalog_page) * catalog_page_size
+    product_grid(
+        filtered.iloc[catalog_start:catalog_start + catalog_page_size],
+        f"shop_page_{catalog_page}",
+    )
 
 with recommend_tab:
     section_heading(
@@ -1353,16 +1374,26 @@ with recommend_tab:
             "recommend_discovery",
         ),
     ]
-    for kicker, title, description, module, key in recommendation_modules:
-        if module.empty:
-            continue
-        section_heading(kicker, title, description)
-        product_grid(
-            module,
-            key,
-            show_reasons=True,
-            columns_per_row=4,
-        )
+    available_modules = [
+        module
+        for module in recommendation_modules
+        if not module[3].empty
+    ]
+    selected_module_index = st.selectbox(
+        "추천 테마",
+        options=list(range(len(available_modules))),
+        format_func=lambda index: available_modules[index][1],
+    )
+    kicker, title, description, module, key = available_modules[
+        int(selected_module_index)
+    ]
+    section_heading(kicker, title, description)
+    product_grid(
+        module,
+        key,
+        show_reasons=True,
+        columns_per_row=4,
+    )
 
 with favorite_tab:
     st.subheader("관심 상품")
