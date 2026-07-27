@@ -4,6 +4,9 @@
 작업은 기능 브랜치에서 진행하고 테스트가 끝나면 Pull Request로 `main`에
 병합한다.
 
+세부 실행 순서와 단계별 완료 조건은
+[`NEXT_STEPS_CHECKLIST.md`](NEXT_STEPS_CHECKLIST.md)를 따른다.
+
 ## P0 — 지금 가장 먼저 끝낼 작업
 
 ### 1. 회원과 MySQL 통합 검증
@@ -35,11 +38,11 @@
 ### 3. PR 및 자동 테스트 흐름
 
 - [x] 현재 MySQL 작업을 `feat/mysql-membership-foundation` 브랜치로 분리
-- [ ] 전체 자동 테스트 통과
-- [ ] GitHub 인증 연결
-- [ ] 기능 브랜치 push
-- [ ] 변경 내용과 테스트 결과를 포함한 Pull Request 생성
-- [ ] CI 통과 후 Pull Request merge
+- [x] 전체 자동 테스트 통과
+- [x] GitHub 인증 연결
+- [x] 기능 브랜치 push
+- [x] 변경 내용과 테스트 결과를 포함한 Pull Request 생성
+- [x] CI 통과 후 Pull Request merge
 
 완료 조건: `main`에 직접 push하지 않고 모든 변경 기록이 PR 단위로 남는다.
 
