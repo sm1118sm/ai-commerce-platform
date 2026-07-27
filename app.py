@@ -425,8 +425,16 @@ def get_products() -> pd.DataFrame:
     return load_products(PRODUCT_PATH)
 
 
+@st.cache_resource(show_spinner="데이터베이스 연결을 준비하고 있어요...")
+def get_database(database_url: str) -> StoreDatabase:
+    """Initialize the schema and catalog once per app process, not per click."""
+    cached_database = StoreDatabase(database_url)
+    cached_database.seed_products(get_products())
+    return cached_database
+
+
 try:
-    database = StoreDatabase(DATABASE_TARGET)
+    database = get_database(DATABASE_TARGET)
 except Exception:
     if os.environ.get("APP_ENV", "development").lower() == "production":
         logging.exception("StylePick database initialization failed")
@@ -437,9 +445,16 @@ except Exception:
         )
         st.stop()
     raise
-database.seed_products(get_products())
-products = database.load_products()
 RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def get_database_products(
+    database_url: str,
+    _database: StoreDatabase,
+) -> pd.DataFrame:
+    """Avoid an extra remote round trip during immediate widget reruns."""
+    return _database.load_products()
 
 
 @st.cache_resource
@@ -449,20 +464,6 @@ def get_recommendation_model(
     _products: pd.DataFrame,
 ):
     return fit_recommender(_products, backend=backend)
-
-
-catalog_fingerprint = tuple(
-    products[["id", "name", "category", "description"]]
-    .astype(str)
-    .itertuples(index=False, name=None)
-)
-model = get_recommendation_model(
-    RECOMMENDER_BACKEND,
-    catalog_fingerprint,
-    products,
-)
-CATEGORIES = sorted(products["category"].unique().tolist())
-MAX_PRICE = int(products["price"].max())
 
 
 def initialize_auth() -> None:
@@ -550,17 +551,18 @@ def render_auth() -> None:
                 key="check_signup_email",
                 width="stretch",
             ):
-                try:
-                    if database.email_is_available(signup_email):
-                        st.session_state.verified_signup_email = normalize_email(
-                            signup_email
-                        )
-                    else:
+                with st.spinner("이메일을 확인하고 있어요..."):
+                    try:
+                        if database.email_is_available(signup_email):
+                            st.session_state.verified_signup_email = (
+                                normalize_email(signup_email)
+                            )
+                        else:
+                            st.session_state.verified_signup_email = None
+                            st.error("이미 가입된 이메일입니다.")
+                    except ValueError as error:
                         st.session_state.verified_signup_email = None
-                        st.error("이미 가입된 이메일입니다.")
-                except ValueError as error:
-                    st.session_state.verified_signup_email = None
-                    st.error(str(error))
+                        st.error(str(error))
             email_verified = (
                 bool(signup_email.strip())
                 and st.session_state.get("verified_signup_email")
@@ -581,17 +583,18 @@ def render_auth() -> None:
                 key="check_signup_nickname",
                 width="stretch",
             ):
-                try:
-                    if database.nickname_is_available(signup_nickname):
-                        st.session_state.verified_signup_nickname = (
-                            normalize_nickname(signup_nickname).casefold()
-                        )
-                    else:
+                with st.spinner("닉네임을 확인하고 있어요..."):
+                    try:
+                        if database.nickname_is_available(signup_nickname):
+                            st.session_state.verified_signup_nickname = (
+                                normalize_nickname(signup_nickname).casefold()
+                            )
+                        else:
+                            st.session_state.verified_signup_nickname = None
+                            st.error("이미 사용 중인 닉네임입니다.")
+                    except ValueError as error:
                         st.session_state.verified_signup_nickname = None
-                        st.error("이미 사용 중인 닉네임입니다.")
-                except ValueError as error:
-                    st.session_state.verified_signup_nickname = None
-                    st.error(str(error))
+                        st.error(str(error))
             nickname_verified = (
                 bool(signup_nickname.strip())
                 and st.session_state.get("verified_signup_nickname")
@@ -632,28 +635,29 @@ def render_auth() -> None:
                 if signup_password != signup_confirm:
                     st.error("비밀번호 확인이 일치하지 않습니다.")
                 else:
-                    try:
-                        created_user = database.register_user(
-                            signup_email,
-                            signup_password,
-                            signup_nickname,
-                            signup_phone,
-                        )
-                        user = database.authenticate(
-                            signup_email,
-                            signup_password,
-                        )
-                        if int(user["id"]) != int(created_user["id"]):
-                            raise ValueError(
-                                "회원가입 정보 저장을 확인하지 못했습니다."
+                    with st.spinner("계정을 안전하게 만들고 있어요..."):
+                        try:
+                            created_user = database.register_user(
+                                signup_email,
+                                signup_password,
+                                signup_nickname,
+                                signup_phone,
                             )
-                        login_user(user)
-                        st.session_state.auth_notice = (
-                            "회원가입 정보가 DB에 저장되고 로그인되었습니다."
-                        )
-                        st.rerun()
-                    except ValueError as error:
-                        st.error(str(error))
+                            user = database.authenticate(
+                                signup_email,
+                                signup_password,
+                            )
+                            if int(user["id"]) != int(created_user["id"]):
+                                raise ValueError(
+                                    "회원가입 정보 저장을 확인하지 못했습니다."
+                                )
+                            login_user(user)
+                            st.session_state.auth_notice = (
+                                "회원가입 정보가 DB에 저장되고 로그인되었습니다."
+                            )
+                            st.rerun()
+                        except ValueError as error:
+                            st.error(str(error))
 
 
 def initialize_state() -> None:
@@ -831,6 +835,23 @@ initialize_auth()
 if not st.session_state.user_id:
     render_auth()
     st.stop()
+
+# Authentication actions do not need the catalog or the AI model. Loading
+# these only after login keeps duplicate checks and signup reruns lightweight.
+products = get_database_products(DATABASE_TARGET, database)
+catalog_fingerprint = tuple(
+    products[["id", "name", "category", "description"]]
+    .astype(str)
+    .itertuples(index=False, name=None)
+)
+model = get_recommendation_model(
+    RECOMMENDER_BACKEND,
+    catalog_fingerprint,
+    products,
+)
+CATEGORIES = sorted(products["category"].unique().tolist())
+MAX_PRICE = int(products["price"].max())
+
 initialize_state()
 current_user = database.get_user(int(st.session_state.user_id))
 behavior_summary = database.behavior_summary(int(st.session_state.user_id))

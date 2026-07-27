@@ -11,6 +11,7 @@ import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Lock
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
@@ -146,6 +147,11 @@ class _ConnectionAdapter:
         cursor.execute(sql.replace("?", "%s"), parameters)
         return cursor
 
+    def executemany(self, sql: str, parameter_rows):
+        cursor = self.raw.cursor()
+        cursor.executemany(sql.replace("?", "%s"), parameter_rows)
+        return cursor
+
     def executescript(self, script: str) -> None:
         for statement in script.split(";"):
             if statement.strip():
@@ -213,22 +219,39 @@ class StoreDatabase:
             if self.kind == "mysql"
             else parse_postgres_url(self.database_url)
         )
+        self._mysql_pool = None
+        self._mysql_pool_lock = Lock()
         self.initialize()
+
+    def _mysql_raw_connection(self):
+        """Return a pooled MySQL connection to avoid a TLS handshake per query."""
+        if self._mysql_pool is None:
+            with self._mysql_pool_lock:
+                if self._mysql_pool is None:
+                    try:
+                        import pymysql
+                        from dbutils.pooled_db import PooledDB
+                        from pymysql.cursors import DictCursor
+                    except ImportError as error:
+                        raise RuntimeError(
+                            "MySQL 사용 시 `pip install PyMySQL DBUtils`가 필요합니다."
+                        ) from error
+                    self._mysql_pool = PooledDB(
+                        creator=pymysql,
+                        maxconnections=6,
+                        mincached=0,
+                        maxcached=4,
+                        blocking=True,
+                        ping=1,
+                        cursorclass=DictCursor,
+                        **self.connection_args,
+                    )
+        return self._mysql_pool.connection()
 
     @contextmanager
     def connect(self):
         if self.kind == "mysql":
-            try:
-                import pymysql
-                from pymysql.cursors import DictCursor
-            except ImportError as error:
-                raise RuntimeError(
-                    "MySQL 사용 시 `pip install PyMySQL`이 필요합니다."
-                ) from error
-            raw_connection = pymysql.connect(
-                **self.connection_args,
-                cursorclass=DictCursor,
-            )
+            raw_connection = self._mysql_raw_connection()
         else:
             try:
                 import psycopg
@@ -301,24 +324,24 @@ class StoreDatabase:
                     tags = EXCLUDED.tags,
                     brand = EXCLUDED.brand
             """
+        parameter_rows = [
+            (
+                str(product["id"]),
+                str(product["name"]),
+                str(product["category"]),
+                str(product["description"]),
+                int(product["price"]),
+                int(product["popularity"]),
+                float(product["rating"]),
+                str(product["emoji"]),
+                int(product.get("stock", 20)),
+                str(product.get("tags", "")),
+                str(product.get("brand", "StylePick")),
+            )
+            for product in frame.to_dict("records")
+        ]
         with self.connect() as connection:
-            for product in frame.to_dict("records"):
-                connection.execute(
-                    upsert_sql,
-                    (
-                        str(product["id"]),
-                        str(product["name"]),
-                        str(product["category"]),
-                        str(product["description"]),
-                        int(product["price"]),
-                        int(product["popularity"]),
-                        float(product["rating"]),
-                        str(product["emoji"]),
-                        int(product.get("stock", 20)),
-                        str(product.get("tags", "")),
-                        str(product.get("brand", "StylePick")),
-                    ),
-                )
+            connection.executemany(upsert_sql, parameter_rows)
 
     def load_products(self) -> pd.DataFrame:
         with self.connect() as connection:
