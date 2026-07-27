@@ -48,6 +48,13 @@ class DatabaseHelpersTest(unittest.TestCase):
         self.assertEqual(parsed["database"], "stylepick")
         self.assertIn("ssl", parsed)
 
+    def test_aiven_mysql_ssl_mode_is_parsed(self) -> None:
+        parsed = parse_mysql_url(
+            "mysql://avnadmin:secret@db.aivencloud.com:26664/"
+            "defaultdb?ssl-mode=REQUIRED"
+        )
+        self.assertEqual(parsed["ssl"], {"check_hostname": False})
+
     def test_postgres_url_is_parsed(self) -> None:
         parsed = parse_postgres_url(
             "postgresql://stylepick:p%40ss@db.example.com:5432/stylepick_test"
