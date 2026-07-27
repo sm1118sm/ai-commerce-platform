@@ -15,6 +15,7 @@ from src.catalog import load_products
 from src.database import (
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
+    format_phone_input,
     normalize_email,
     normalize_nickname,
 )
@@ -482,6 +483,12 @@ def login_user(user: dict) -> None:
     st.session_state.last_order = None
 
 
+def format_signup_phone() -> None:
+    st.session_state.signup_phone = format_phone_input(
+        st.session_state.get("signup_phone", "")
+    )
+
+
 def render_auth() -> None:
     intro_col, form_col = st.columns([1.08, .92], gap="large")
     with intro_col:
@@ -610,6 +617,7 @@ def render_auth() -> None:
                 key="signup_phone",
                 placeholder="010-1234-5678",
                 max_chars=20,
+                on_change=format_signup_phone,
             )
             signup_password = st.text_input(
                 "비밀번호",

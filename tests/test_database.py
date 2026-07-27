@@ -8,9 +8,11 @@ from src.catalog import load_products
 from src.database import (
     StoreDatabase,
     database_kind,
+    format_phone_input,
     normalize_phone,
     parse_mysql_url,
     parse_postgres_url,
+    validate_email,
     validate_password,
 )
 
@@ -75,6 +77,27 @@ class DatabaseHelpersTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "전화번호"):
             normalize_phone("1234")
 
+    def test_email_requires_a_valid_alpha_domain_suffix(self) -> None:
+        self.assertEqual(
+            validate_email(" User.Name+shop@Gmail.com "),
+            "user.name+shop@gmail.com",
+        )
+        for invalid in [
+            "sm1118sm@gmail.com1",
+            "sm1118sm@gmail",
+            ".sm1118sm@gmail.com",
+            "sm1118sm..shop@gmail.com",
+        ]:
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "이메일"):
+                    validate_email(invalid)
+
+    def test_phone_input_adds_hyphens(self) -> None:
+        self.assertEqual(format_phone_input("010"), "010")
+        self.assertEqual(format_phone_input("0101234"), "010-1234")
+        self.assertEqual(format_phone_input("01012345678"), "010-1234-5678")
+        self.assertEqual(format_phone_input("010-1234-5678"), "010-1234-5678")
+
     def test_password_requires_uppercase_and_special_character(self) -> None:
         validate_password("Valid-pass!")
         with self.assertRaisesRegex(ValueError, "대문자"):
@@ -110,6 +133,7 @@ class DatabaseTest(unittest.TestCase):
             "Secure-password!",
         )
         self.assertEqual(int(authenticated["id"]), user_id)
+        self.assertNotIn("password_hash", authenticated)
         database.save_profile(
             user_id,
             "테스터",

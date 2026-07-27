@@ -11,7 +11,7 @@ import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
@@ -28,13 +28,33 @@ ACTION_WEIGHTS = {
     "PURCHASE": 8.0,
 }
 VALID_ACTIONS = set(ACTION_WEIGHTS)
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_PATTERN = re.compile(
+    r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@"
+    r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"[A-Za-z]{2,63}$"
+)
 PASSWORD_ITERATIONS = 240_000
 PASSWORD_SPECIAL_CHARACTERS = "!@#$%^&*()-_=+[]{};:,.?/"
 
 
 def normalize_email(email: str) -> str:
     return unicodedata.normalize("NFKC", email).strip().lower()
+
+
+def validate_email(email: str) -> str:
+    """Return a normalized email after rejecting malformed domain suffixes."""
+    normalized = normalize_email(email)
+    local_part, separator, domain = normalized.partition("@")
+    if (
+        not separator
+        or not EMAIL_PATTERN.fullmatch(normalized)
+        or local_part.startswith(".")
+        or local_part.endswith(".")
+        or ".." in local_part
+        or ".." in domain
+    ):
+        raise ValueError("올바른 이메일 주소를 입력하세요.")
+    return normalized
 
 
 def normalize_nickname(nickname: str) -> str:
@@ -49,6 +69,16 @@ def normalize_phone(phone_number: str) -> str:
     if not re.fullmatch(r"0\d{9,10}", digits):
         raise ValueError("전화번호는 010-1234-5678 형식으로 입력하세요.")
     return digits
+
+
+def format_phone_input(phone_number: str) -> str:
+    """Format typed Korean mobile digits without changing stored normalization."""
+    digits = re.sub(r"\D", "", unicodedata.normalize("NFKC", phone_number))[:11]
+    if len(digits) <= 3:
+        return digits
+    if len(digits) <= 7:
+        return f"{digits[:3]}-{digits[3:]}"
+    return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
 
 
 def is_unique_violation(error: Exception) -> bool:
@@ -363,11 +393,9 @@ class StoreDatabase:
         nickname: str,
         phone_number: str,
     ) -> dict:
-        email = normalize_email(email)
+        email = validate_email(email)
         nickname = normalize_nickname(nickname)
         phone_number = normalize_phone(phone_number)
-        if not EMAIL_PATTERN.match(email):
-            raise ValueError("올바른 이메일 주소를 입력하세요.")
         validate_password(password)
         if not 1 <= len(nickname) <= 30:
             raise ValueError("닉네임은 1~30자로 입력하세요.")
@@ -451,9 +479,7 @@ class StoreDatabase:
         return self.get_user(user_id)
 
     def email_is_available(self, email: str) -> bool:
-        email = normalize_email(email)
-        if not EMAIL_PATTERN.match(email):
-            raise ValueError("올바른 이메일 주소를 입력하세요.")
+        email = validate_email(email)
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -507,11 +533,34 @@ class StoreDatabase:
                 or not verify_password(password, row["password_hash"])
             ):
                 raise ValueError("이메일 또는 비밀번호가 올바르지 않습니다.")
-            connection.execute(
-                "UPDATE users SET last_login_at = ? WHERE id = ?",
-                (datetime.now().isoformat(timespec="seconds"), row["id"]),
-            )
-        return self.get_user(int(row["id"]))
+        last_login_at = datetime.now().isoformat(timespec="seconds")
+        Thread(
+            target=self._record_last_login,
+            args=(int(row["id"]), last_login_at),
+            daemon=True,
+        ).start()
+        return {
+            "id": int(row["id"]),
+            "email": row["email"],
+            "nickname": row["nickname"],
+            "role": row["role"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "last_login_at": last_login_at,
+        }
+
+    def _record_last_login(self, user_id: int, last_login_at: str) -> None:
+        """Best-effort audit update that must not delay a successful login."""
+        try:
+            with self.connect() as connection:
+                connection.execute(
+                    "UPDATE users SET last_login_at = ? WHERE id = ?",
+                    (last_login_at, int(user_id)),
+                )
+        except Exception:
+            # Authentication already succeeded. A transient audit-write failure
+            # should not turn it into a user-visible login failure.
+            return
 
     def get_user(self, user_id: int) -> dict:
         with self.connect() as connection:

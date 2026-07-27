@@ -100,6 +100,16 @@ class AppSmokeTest(unittest.TestCase):
                 [message.value for message in app.success],
             )
 
+            signup_phone = next(
+                field for field in app.text_input
+                if field.key == "signup_phone"
+            )
+            signup_phone.input("01012345678").run()
+            self.assertEqual(
+                app.session_state["signup_phone"],
+                "010-1234-5678",
+            )
+
     def test_main_screens_render(self) -> None:
         with patch.dict(
             os.environ,
