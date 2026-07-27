@@ -37,10 +37,26 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+      :root {
+        --sp-ink: #111827;
+        --sp-muted: #64748b;
+        --sp-line: #e5e7eb;
+        --sp-surface: #ffffff;
+        --sp-soft: #f6f7fb;
+        --sp-primary: #5b4cf0;
+        --sp-primary-dark: #4134cf;
+        --sp-accent: #ff4d8d;
+        --sp-radius: 22px;
+      }
+      html { scroll-behavior: smooth; }
       .stApp {
-        background: #f7f8fc;
-        color: #172033;
+        background:
+          radial-gradient(circle at 8% 0%, rgba(91,76,240,.08), transparent 26rem),
+          #f8f9fc;
+        color: var(--sp-ink);
         color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "Noto Sans KR", sans-serif;
       }
       /* Keep the current screen crisp while Streamlit processes a widget rerun. */
       [data-stale="true"] {
@@ -52,32 +68,223 @@ st.markdown(
       [data-testid="stCaptionContainer"] p,
       [data-testid="stMarkdownContainer"] > p,
       button[data-baseweb="tab"] p {
-        color: #172033 !important;
+        color: var(--sp-ink) !important;
       }
       div[data-baseweb="input"] input,
       div[data-baseweb="base-input"] input {
         background: #ffffff !important;
-        color: #172033 !important;
-        -webkit-text-fill-color: #172033 !important;
+        color: var(--sp-ink) !important;
+        -webkit-text-fill-color: var(--sp-ink) !important;
       }
-      .block-container { max-width: 1240px; padding-top: 2rem; padding-bottom: 5rem; }
+      .block-container {
+        max-width: 1280px;
+        padding-top: 1.25rem;
+        padding-bottom: 6rem;
+      }
+      .store-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .75rem 1rem;
+        margin-bottom: 1.1rem;
+        background: rgba(255,255,255,.88);
+        border: 1px solid rgba(229,231,235,.9);
+        border-radius: 18px;
+        box-shadow: 0 10px 35px rgba(15,23,42,.06);
+        backdrop-filter: blur(14px);
+      }
+      .brand-lockup { display: flex; align-items: center; gap: .75rem; }
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        color: white;
+        font-weight: 900;
+        border-radius: 13px;
+        background: linear-gradient(135deg, var(--sp-primary), var(--sp-accent));
+        box-shadow: 0 8px 18px rgba(91,76,240,.28);
+      }
+      .brand-name { font-weight: 900; font-size: 1.08rem; letter-spacing: -.03em; }
+      .brand-caption { color: var(--sp-muted); font-size: .76rem; margin-top: .06rem; }
+      .header-status { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+      .status-chip {
+        padding: .5rem .72rem;
+        color: #374151;
+        background: #f8fafc;
+        border: 1px solid var(--sp-line);
+        border-radius: 999px;
+        font-size: .8rem;
+        font-weight: 700;
+      }
       .hero {
-        padding: 2.2rem; border-radius: 24px; color: white; margin-bottom: 1rem;
-        background: linear-gradient(120deg, #4f46e5, #7c3aed 50%, #ec4899);
-        box-shadow: 0 18px 40px rgba(79,70,229,.18);
+        position: relative;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(260px, .7fr);
+        gap: 2rem;
+        align-items: center;
+        padding: clamp(2rem, 5vw, 4.25rem);
+        border-radius: 30px;
+        color: white;
+        margin-bottom: 1.25rem;
+        background:
+          radial-gradient(circle at 88% 15%, rgba(255,255,255,.23), transparent 13rem),
+          linear-gradient(125deg, #3026a7, #6d4aff 54%, #e64691);
+        box-shadow: 0 24px 60px rgba(67,56,202,.22);
       }
-      .hero h1 { margin: 0 0 .4rem 0; font-size: 2.35rem; }
-      .hero p { margin: 0; opacity: .9; font-size: 1.05rem; }
+      .hero::after {
+        content: "";
+        position: absolute;
+        width: 260px;
+        height: 260px;
+        right: -90px;
+        bottom: -150px;
+        border: 45px solid rgba(255,255,255,.1);
+        border-radius: 50%;
+      }
+      .hero-copy, .hero-summary { position: relative; z-index: 1; }
+      .hero-eyebrow {
+        display: inline-flex;
+        margin-bottom: .9rem;
+        padding: .42rem .7rem;
+        border: 1px solid rgba(255,255,255,.3);
+        border-radius: 999px;
+        background: rgba(255,255,255,.12);
+        font-size: .77rem;
+        font-weight: 800;
+        letter-spacing: .06em;
+      }
+      .hero h1 {
+        max-width: 720px;
+        margin: 0 0 .75rem 0;
+        font-size: clamp(2.15rem, 5vw, 4.2rem);
+        line-height: 1.05;
+        letter-spacing: -.055em;
+      }
+      .hero p {
+        max-width: 620px;
+        margin: 0;
+        opacity: .88;
+        font-size: clamp(.98rem, 1.6vw, 1.15rem);
+        line-height: 1.65;
+      }
+      .hero-tags { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: 1.2rem; }
+      .hero-tag {
+        padding: .42rem .68rem;
+        background: rgba(255,255,255,.14);
+        border-radius: 999px;
+        font-size: .78rem;
+        font-weight: 700;
+      }
+      .hero-summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .65rem;
+        padding: .8rem;
+        background: rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.2);
+        border-radius: 22px;
+        backdrop-filter: blur(12px);
+      }
+      .hero-stat {
+        padding: .9rem;
+        background: rgba(255,255,255,.1);
+        border-radius: 16px;
+      }
+      .hero-stat b { display: block; font-size: 1.35rem; }
+      .hero-stat span { opacity: .76; font-size: .75rem; }
+      .auth-hero {
+        min-height: 590px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: clamp(2rem, 5vw, 4.5rem);
+        color: white;
+        border-radius: 30px;
+        background:
+          radial-gradient(circle at 85% 15%, rgba(255,255,255,.2), transparent 13rem),
+          linear-gradient(145deg, #3026a7, #7048f4 58%, #ee4b91);
+        box-shadow: 0 24px 60px rgba(67,56,202,.2);
+      }
+      .auth-hero h1 {
+        max-width: 600px;
+        margin: .8rem 0 1rem;
+        font-size: clamp(2.5rem, 5vw, 4.8rem);
+        line-height: 1.02;
+        letter-spacing: -.06em;
+      }
+      .auth-hero p { max-width: 520px; line-height: 1.7; opacity: .88; }
+      .auth-benefits {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: .65rem;
+        margin-top: 2rem;
+      }
+      .auth-benefit {
+        padding: .9rem;
+        border-radius: 16px;
+        background: rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.16);
+        font-size: .8rem;
+        font-weight: 700;
+      }
+      .auth-panel {
+        padding: 1rem .25rem 1.5rem;
+      }
+      .auth-panel h2 { margin: 0; font-size: 1.65rem; letter-spacing: -.035em; }
+      .auth-panel-copy { color: var(--sp-muted); margin: .4rem 0 1.3rem; }
+      .section-heading { margin: 1.6rem 0 1rem; }
+      .section-kicker {
+        color: var(--sp-primary);
+        font-size: .76rem;
+        font-weight: 900;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .section-heading h2 {
+        margin: .25rem 0;
+        font-size: clamp(1.45rem, 3vw, 2rem);
+        letter-spacing: -.04em;
+      }
+      .section-heading p { margin: 0; color: var(--sp-muted); }
       .product-card {
-        min-height: 250px; background: white; border: 1px solid #e8eaf2;
-        border-radius: 18px; padding: 1.15rem; margin-top: .5rem;
-        box-shadow: 0 6px 22px rgba(15,23,42,.055);
+        min-height: 300px;
+        background: var(--sp-surface);
+        border: 1px solid var(--sp-line);
+        border-radius: var(--sp-radius);
+        padding: 1.15rem;
+        margin-top: .5rem;
+        box-shadow: 0 8px 28px rgba(15,23,42,.055);
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
       }
-      .product-emoji { font-size: 3.3rem; text-align: center; padding: .4rem; }
-      .product-category { color: #6d5dfc; font-size: .82rem; font-weight: 700; }
-      .product-brand { color: #64748b; font-size: .75rem; font-weight: 700; letter-spacing:.04em; }
-      .product-name { font-size: 1.08rem; font-weight: 750; margin: .35rem 0; }
-      .product-description { color: #64748b; font-size: .88rem; min-height: 3.8rem; }
+      .product-card:hover {
+        transform: translateY(-3px);
+        border-color: #cbc7ff;
+        box-shadow: 0 16px 38px rgba(15,23,42,.09);
+      }
+      .product-visual {
+        display: grid;
+        place-items: center;
+        min-height: 125px;
+        margin-bottom: .85rem;
+        border-radius: 16px;
+        background: linear-gradient(145deg, #f2f0ff, #fff4f8);
+      }
+      .product-emoji { font-size: 3.7rem; text-align: center; filter: drop-shadow(0 7px 8px rgba(15,23,42,.12)); }
+      .product-category {
+        display: inline-flex;
+        color: var(--sp-primary);
+        background: #f1efff;
+        border-radius: 999px;
+        padding: .25rem .48rem;
+        font-size: .72rem;
+        font-weight: 800;
+      }
+      .product-brand { color: var(--sp-muted); font-size: .72rem; font-weight: 800; letter-spacing:.06em; margin-top:.65rem; }
+      .product-name { font-size: 1.06rem; font-weight: 800; margin: .3rem 0; letter-spacing:-.025em; }
+      .product-description { color: var(--sp-muted); font-size: .84rem; min-height: 3.6rem; line-height:1.55; }
       .product-meta { display:flex; justify-content:space-between; margin-top:.8rem; }
       .reason {
         background: #f0fdf4; border: 1px solid #bbf7d0; color:#166534;
@@ -85,7 +292,126 @@ st.markdown(
         margin-top: .7rem;
       }
       [data-testid="stMetric"] {
-        background:white; border:1px solid #e8eaf2; border-radius:14px; padding:14px;
+        background:white; border:1px solid var(--sp-line); border-radius:16px; padding:14px;
+      }
+      button[kind="primary"] {
+        background: linear-gradient(110deg, var(--sp-primary), #7c3aed) !important;
+        border: 0 !important;
+      }
+      .stButton button, .stFormSubmitButton button { min-height: 44px; border-radius: 12px; }
+      div[data-baseweb="tab-list"] {
+        gap: .25rem;
+        padding: .3rem;
+        background: white;
+        border: 1px solid var(--sp-line);
+        border-radius: 15px;
+      }
+      button[data-baseweb="tab"] { min-height: 44px; border-radius: 11px; padding: .55rem .9rem; }
+      button[data-baseweb="tab"][aria-selected="true"] { background: #f1efff; }
+      .trust-strip {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: .8rem;
+        margin: 3rem 0 1.25rem;
+      }
+      .trust-item {
+        padding: 1.2rem;
+        background: white;
+        border: 1px solid var(--sp-line);
+        border-radius: 18px;
+      }
+      .trust-item b { display: block; margin-bottom: .25rem; }
+      .trust-item span { color: var(--sp-muted); font-size: .82rem; line-height: 1.5; }
+      .store-footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.6rem 0 .5rem;
+        color: var(--sp-muted);
+        border-top: 1px solid var(--sp-line);
+        font-size: .78rem;
+      }
+      .store-footer b { color: var(--sp-ink); }
+
+      @media (max-width: 900px) {
+        .block-container { padding-left: 1.15rem; padding-right: 1.15rem; }
+        .hero { grid-template-columns: 1fr; }
+        .hero-summary { max-width: 520px; }
+        .header-status .status-chip:first-child { display: none; }
+        div[data-testid="stHorizontalBlock"]:has(.auth-hero) {
+          flex-wrap: wrap;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.auth-hero) > div[data-testid="stColumn"] {
+          min-width: min(100%, 420px);
+          flex: 1 1 420px;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .block-container {
+          padding: .7rem .8rem 7.4rem;
+        }
+        .store-header {
+          position: sticky;
+          top: .45rem;
+          z-index: 90;
+          padding: .58rem .65rem;
+          border-radius: 15px;
+        }
+        .brand-caption, .header-status .status-chip:first-child { display: none; }
+        .brand-mark { width: 38px; height: 38px; }
+        .status-chip { padding: .43rem .58rem; font-size: .73rem; }
+        .hero {
+          grid-template-columns: 1fr;
+          gap: 1.2rem;
+          padding: 1.65rem 1.25rem;
+          border-radius: 22px;
+        }
+        .hero h1 { font-size: 2.35rem; }
+        .hero-summary { grid-template-columns: repeat(2, 1fr); padding: .55rem; }
+        .hero-stat { padding: .7rem; }
+        .auth-hero { min-height: 430px; padding: 2rem 1.35rem; border-radius: 22px; }
+        .auth-benefits { grid-template-columns: 1fr; }
+        .auth-panel { padding: .5rem .1rem 1rem; }
+        .section-heading { margin-top: 1.2rem; }
+        div[data-testid="stHorizontalBlock"]:has(.product-card) {
+          flex-wrap: wrap;
+          gap: .35rem;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.product-card) > div[data-testid="stColumn"] {
+          flex: 1 1 100%;
+          width: 100%;
+          min-width: 100%;
+        }
+        .product-card { min-height: 0; }
+        .product-description { min-height: 0; }
+        .trust-strip { grid-template-columns: 1fr; margin-top: 2rem; }
+        .store-footer { flex-direction: column; }
+        body:has(.store-shell-marker) div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+          position: fixed;
+          left: .55rem;
+          right: .55rem;
+          bottom: .55rem;
+          z-index: 999;
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: .2rem;
+          padding: .35rem;
+          box-shadow: 0 16px 45px rgba(15,23,42,.2);
+          border-radius: 18px;
+        }
+        body:has(.store-shell-marker) button[data-baseweb="tab"] {
+          min-width: 0;
+          padding: .52rem .15rem;
+        }
+        body:has(.store-shell-marker) button[data-baseweb="tab"] p {
+          max-width: 100%;
+          overflow: hidden;
+          font-size: 0;
+        }
+        body:has(.store-shell-marker) button[data-baseweb="tab"] p::first-letter {
+          font-size: 1.15rem;
+        }
       }
     </style>
     """,
@@ -144,156 +470,178 @@ def login_user(user: dict) -> None:
 
 
 def render_auth() -> None:
-    st.markdown(
-        """
-        <div class="hero">
-          <h1>StylePick AI</h1>
-          <p>회원별 행동을 학습하는 설명 가능한 개인화 쇼핑</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.write("취향과 행동 데이터를 안전하게 분리 저장하려면 로그인해 주세요.")
-    if st.session_state.pop("account_deleted_notice", False):
-        st.success("회원 정보와 연결 데이터가 모두 삭제되었습니다.")
-    login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
-    with login_tab:
-        with st.form("login_form"):
-            email = st.text_input("이메일", placeholder="name@example.com")
-            password = st.text_input("비밀번호", type="password")
-            submitted = st.form_submit_button(
-                "로그인",
+    intro_col, form_col = st.columns([1.08, .92], gap="large")
+    with intro_col:
+        st.markdown(
+            """
+            <section class="auth-hero">
+              <div>
+                <span class="hero-eyebrow">EXPLAINABLE AI COMMERCE</span>
+                <h1>내 취향을 아는<br>쇼핑의 시작.</h1>
+                <p>
+                  검색, 찜, 장바구니 행동을 안전하게 분리 저장하고
+                  왜 추천했는지 설명하는 개인화 쇼핑을 경험해 보세요.
+                </p>
+              </div>
+              <div class="auth-benefits">
+                <div class="auth-benefit">✨ 자연어 AI 추천</div>
+                <div class="auth-benefit">🔒 비밀번호 해시 저장</div>
+                <div class="auth-benefit">📱 모바일 반응형</div>
+              </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+    with form_col:
+        st.markdown(
+            """
+            <div class="auth-panel">
+              <h2>StylePick AI 시작하기</h2>
+              <p class="auth-panel-copy">로그인하거나 새 계정을 만들어 취향을 저장하세요.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.session_state.pop("account_deleted_notice", False):
+            st.success("회원 정보와 연결 데이터가 모두 삭제되었습니다.")
+        login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
+        with login_tab:
+            with st.form("login_form"):
+                email = st.text_input("이메일", placeholder="name@example.com")
+                password = st.text_input("비밀번호", type="password")
+                submitted = st.form_submit_button(
+                    "로그인",
+                    type="primary",
+                    width="stretch",
+                )
+                if submitted:
+                    try:
+                        login_user(database.authenticate(email, password))
+                        st.session_state.auth_notice = (
+                            "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
+                        )
+                        st.rerun()
+                    except ValueError as error:
+                        st.error(str(error))
+            if st.button("데모 계정으로 바로 시작", width="stretch"):
+                login_user(database.ensure_demo_user())
+                st.rerun()
+            st.caption("데모 계정은 로컬 시연용이며 실제 결제는 발생하지 않습니다.")
+        with signup_tab:
+            signup_email = st.text_input(
+                "이메일",
+                key="signup_email",
+                max_chars=120,
+            )
+            if st.button(
+                "이메일 중복 확인",
+                key="check_signup_email",
+                width="stretch",
+            ):
+                try:
+                    if database.email_is_available(signup_email):
+                        st.session_state.verified_signup_email = normalize_email(
+                            signup_email
+                        )
+                    else:
+                        st.session_state.verified_signup_email = None
+                        st.error("이미 가입된 이메일입니다.")
+                except ValueError as error:
+                    st.session_state.verified_signup_email = None
+                    st.error(str(error))
+            email_verified = (
+                bool(signup_email.strip())
+                and st.session_state.get("verified_signup_email")
+                == normalize_email(signup_email)
+            )
+            if email_verified:
+                st.success("사용 가능한 이메일입니다.")
+            else:
+                st.caption("이메일 중복 확인이 필요합니다.")
+
+            signup_nickname = st.text_input(
+                "닉네임",
+                key="signup_nickname",
+                max_chars=30,
+            )
+            if st.button(
+                "닉네임 중복 확인",
+                key="check_signup_nickname",
+                width="stretch",
+            ):
+                try:
+                    if database.nickname_is_available(signup_nickname):
+                        st.session_state.verified_signup_nickname = (
+                            normalize_nickname(signup_nickname).casefold()
+                        )
+                    else:
+                        st.session_state.verified_signup_nickname = None
+                        st.error("이미 사용 중인 닉네임입니다.")
+                except ValueError as error:
+                    st.session_state.verified_signup_nickname = None
+                    st.error(str(error))
+            nickname_verified = (
+                bool(signup_nickname.strip())
+                and st.session_state.get("verified_signup_nickname")
+                == normalize_nickname(signup_nickname).casefold()
+            )
+            if nickname_verified:
+                st.success("사용 가능한 닉네임입니다.")
+            else:
+                st.caption("닉네임 중복 확인이 필요합니다.")
+
+            signup_phone = st.text_input(
+                "전화번호",
+                key="signup_phone",
+                placeholder="010-1234-5678",
+                max_chars=20,
+            )
+            signup_password = st.text_input(
+                "비밀번호",
+                type="password",
+                key="signup_password",
+            )
+            st.caption(
+                "8자 이상 · 영문 대문자 1개 이상 · 특수문자 1개 이상"
+            )
+            st.caption(f"허용 특수문자: {PASSWORD_SPECIAL_CHARACTERS}")
+            signup_confirm = st.text_input(
+                "비밀번호 확인",
+                type="password",
+                key="signup_confirm",
+            )
+            signup_submitted = st.button(
+                "회원가입",
                 type="primary",
                 width="stretch",
+                disabled=not (email_verified and nickname_verified),
             )
-            if submitted:
-                try:
-                    login_user(database.authenticate(email, password))
-                    st.session_state.auth_notice = (
-                        "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
-                    )
-                    st.rerun()
-                except ValueError as error:
-                    st.error(str(error))
-        if st.button("데모 계정으로 바로 시작", width="stretch"):
-            login_user(database.ensure_demo_user())
-            st.rerun()
-        st.caption("데모 계정은 로컬 시연용이며 실제 결제는 발생하지 않습니다.")
-    with signup_tab:
-        signup_email = st.text_input(
-            "이메일",
-            key="signup_email",
-            max_chars=120,
-        )
-        if st.button(
-            "이메일 중복 확인",
-            key="check_signup_email",
-            width="stretch",
-        ):
-            try:
-                if database.email_is_available(signup_email):
-                    st.session_state.verified_signup_email = normalize_email(
-                        signup_email
-                    )
+            if signup_submitted:
+                if signup_password != signup_confirm:
+                    st.error("비밀번호 확인이 일치하지 않습니다.")
                 else:
-                    st.session_state.verified_signup_email = None
-                    st.error("이미 가입된 이메일입니다.")
-            except ValueError as error:
-                st.session_state.verified_signup_email = None
-                st.error(str(error))
-        email_verified = (
-            bool(signup_email.strip())
-            and st.session_state.get("verified_signup_email")
-            == normalize_email(signup_email)
-        )
-        if email_verified:
-            st.success("사용 가능한 이메일입니다.")
-        else:
-            st.caption("이메일 중복 확인이 필요합니다.")
-
-        signup_nickname = st.text_input(
-            "닉네임",
-            key="signup_nickname",
-            max_chars=30,
-        )
-        if st.button(
-            "닉네임 중복 확인",
-            key="check_signup_nickname",
-            width="stretch",
-        ):
-            try:
-                if database.nickname_is_available(signup_nickname):
-                    st.session_state.verified_signup_nickname = (
-                        normalize_nickname(signup_nickname).casefold()
-                    )
-                else:
-                    st.session_state.verified_signup_nickname = None
-                    st.error("이미 사용 중인 닉네임입니다.")
-            except ValueError as error:
-                st.session_state.verified_signup_nickname = None
-                st.error(str(error))
-        nickname_verified = (
-            bool(signup_nickname.strip())
-            and st.session_state.get("verified_signup_nickname")
-            == normalize_nickname(signup_nickname).casefold()
-        )
-        if nickname_verified:
-            st.success("사용 가능한 닉네임입니다.")
-        else:
-            st.caption("닉네임 중복 확인이 필요합니다.")
-
-        signup_phone = st.text_input(
-            "전화번호",
-            key="signup_phone",
-            placeholder="010-1234-5678",
-            max_chars=20,
-        )
-        signup_password = st.text_input(
-            "비밀번호",
-            type="password",
-            key="signup_password",
-        )
-        st.caption(
-            "8자 이상 · 영문 대문자 1개 이상 · 특수문자 1개 이상"
-        )
-        st.caption(f"허용 특수문자: {PASSWORD_SPECIAL_CHARACTERS}")
-        signup_confirm = st.text_input(
-            "비밀번호 확인",
-            type="password",
-            key="signup_confirm",
-        )
-        signup_submitted = st.button(
-            "회원가입",
-            type="primary",
-            width="stretch",
-            disabled=not (email_verified and nickname_verified),
-        )
-        if signup_submitted:
-            if signup_password != signup_confirm:
-                st.error("비밀번호 확인이 일치하지 않습니다.")
-            else:
-                try:
-                    created_user = database.register_user(
-                        signup_email,
-                        signup_password,
-                        signup_nickname,
-                        signup_phone,
-                    )
-                    user = database.authenticate(
-                        signup_email,
-                        signup_password,
-                    )
-                    if int(user["id"]) != int(created_user["id"]):
-                        raise ValueError(
-                            "회원가입 정보 저장을 확인하지 못했습니다."
+                    try:
+                        created_user = database.register_user(
+                            signup_email,
+                            signup_password,
+                            signup_nickname,
+                            signup_phone,
                         )
-                    login_user(user)
-                    st.session_state.auth_notice = (
-                        "회원가입 정보가 DB에 저장되고 로그인되었습니다."
-                    )
-                    st.rerun()
-                except ValueError as error:
-                    st.error(str(error))
+                        user = database.authenticate(
+                            signup_email,
+                            signup_password,
+                        )
+                        if int(user["id"]) != int(created_user["id"]):
+                            raise ValueError(
+                                "회원가입 정보 저장을 확인하지 못했습니다."
+                            )
+                        login_user(user)
+                        st.session_state.auth_notice = (
+                            "회원가입 정보가 DB에 저장되고 로그인되었습니다."
+                        )
+                        st.rerun()
+                    except ValueError as error:
+                        st.error(str(error))
 
 
 def initialize_state() -> None:
@@ -378,7 +726,9 @@ def product_card(product: pd.Series, key_prefix: str, reason: str | None = None)
     st.markdown(
         f"""
         <div class="product-card">
-          <div class="product-emoji">{product['emoji']}</div>
+          <div class="product-visual">
+            <div class="product-emoji">{product['emoji']}</div>
+          </div>
           <div class="product-category">{escape(str(product['category']))}</div>
           <div class="product-brand">{escape(str(product['brand']))}</div>
           <div class="product-name">{escape(str(product['name']))}</div>
@@ -430,13 +780,14 @@ def product_grid(
     frame: pd.DataFrame,
     key_prefix: str,
     show_reasons: bool = False,
+    columns_per_row: int = 3,
 ) -> None:
     if frame.empty:
         st.info("조건에 맞는 상품이 없습니다.")
         return
     rows = frame.reset_index(drop=True)
-    for start in range(0, len(rows), 3):
-        columns = st.columns(3)
+    for start in range(0, len(rows), columns_per_row):
+        columns = st.columns(columns_per_row)
         for offset, container in enumerate(columns):
             index = start + offset
             if index >= len(rows):
@@ -451,12 +802,26 @@ def product_grid(
                 product_card(item, key_prefix, reason)
 
 
+def section_heading(kicker: str, title: str, description: str) -> None:
+    st.markdown(
+        f"""
+        <div class="section-heading">
+          <span class="section-kicker">{escape(kicker)}</span>
+          <h2>{escape(title)}</h2>
+          <p>{escape(description)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 initialize_auth()
 if not st.session_state.user_id:
     render_auth()
     st.stop()
 initialize_state()
 current_user = database.get_user(int(st.session_state.user_id))
+behavior_summary = database.behavior_summary(int(st.session_state.user_id))
 if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
 
@@ -497,7 +862,6 @@ with st.sidebar:
     st.divider()
     st.metric("찜한 상품", len(st.session_state.favorites))
     st.metric("장바구니 수량", sum(st.session_state.cart.values()))
-    behavior_summary = database.behavior_summary(int(st.session_state.user_id))
     st.caption(
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
     )
@@ -533,11 +897,64 @@ with st.sidebar:
                 except ValueError as error:
                     st.error(str(error))
 
+behavior_weights = database.user_behavior_weights(
+    int(st.session_state.user_id)
+)
+trend_scores = database.trend_scores(days=7)
+purchased_ids = database.purchased_product_ids(
+    int(st.session_state.user_id)
+)
+budget_min, budget_max = st.session_state.budget
+base_recommendations = recommend(
+    products=products,
+    model=model,
+    interests=list(st.session_state.interests),
+    favorite_ids=set(st.session_state.favorites),
+    budget_min=budget_min,
+    budget_max=budget_max,
+    top_n=24,
+    behavior_product_weights=behavior_weights,
+    trend_product_scores=trend_scores,
+    purchased_ids=purchased_ids,
+)
+
 st.markdown(
     f"""
+    <div class="store-shell-marker"></div>
+    <header class="store-header">
+      <div class="brand-lockup">
+        <div class="brand-mark">SP</div>
+        <div>
+          <div class="brand-name">StylePick AI</div>
+          <div class="brand-caption">나를 이해하는 설명 가능한 쇼핑</div>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-chip">👤 {escape(st.session_state.nickname)}님</span>
+        <span class="status-chip">♥ {len(st.session_state.favorites)}</span>
+        <span class="status-chip">🛒 {sum(st.session_state.cart.values())}</span>
+      </div>
+    </header>
     <div class="hero">
-      <h1>StylePick AI</h1>
-      <p>{escape(st.session_state.nickname)}님을 위한 설명 가능한 AI 쇼핑 큐레이션</p>
+      <div class="hero-copy">
+        <span class="hero-eyebrow">PERSONAL SHOPPING, EXPLAINED</span>
+        <h1>취향을 발견하는<br>가장 똑똑한 쇼핑.</h1>
+        <p>
+          {escape(st.session_state.nickname)}님의 관심사와 최근 행동을 바탕으로
+          20·30대 라이프스타일 상품을 고르고 추천 이유까지 알려드려요.
+        </p>
+        <div class="hero-tags">
+          <span class="hero-tag">✨ 자연어 추천</span>
+          <span class="hero-tag">🎯 행동 기반 개인화</span>
+          <span class="hero-tag">🔎 추천 이유 제공</span>
+        </div>
+      </div>
+      <div class="hero-summary">
+        <div class="hero-stat"><b>{len(products)}</b><span>엄선된 상품</span></div>
+        <div class="hero-stat"><b>{len(CATEGORIES)}</b><span>라이프 카테고리</span></div>
+        <div class="hero-stat"><b>{sum(behavior_summary.values())}</b><span>반영된 나의 행동</span></div>
+        <div class="hero-stat"><b>{RECOMMENDER_BACKEND.upper()}</b><span>추천 모델</span></div>
+      </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -548,7 +965,22 @@ shop_tab, recommend_tab, favorite_tab, cart_tab = st.tabs(
 )
 
 with shop_tab:
-    st.subheader("상품 탐색")
+    section_heading(
+        "FOR YOU",
+        f"{st.session_state.nickname}님, 이런 상품은 어때요?",
+        "저장한 취향과 최근 행동을 반영해 먼저 보여드리는 AI 추천입니다.",
+    )
+    product_grid(
+        base_recommendations.head(4),
+        "home_personal",
+        show_reasons=True,
+        columns_per_row=4,
+    )
+    section_heading(
+        "DISCOVER",
+        "모든 상품 둘러보기",
+        "검색과 필터로 지금 필요한 상품을 빠르게 찾아보세요.",
+    )
     search_col, category_col, sort_col = st.columns([1.4, 1, 0.9])
     query = search_col.text_input(
         "상품 검색",
@@ -610,19 +1042,15 @@ with shop_tab:
     product_grid(filtered, "shop")
 
 with recommend_tab:
-    st.subheader(f"{st.session_state.nickname}님을 위한 AI 추천")
+    section_heading(
+        "AI CURATION",
+        f"{st.session_state.nickname}님만을 위한 추천 피드",
+        "자연어로 원하는 상황을 말하면 의미와 행동을 함께 분석해 진열대를 다시 구성합니다.",
+    )
     recommendation_query = st.text_input(
         "원하는 상품을 자연어로 입력하세요",
         placeholder="예: 비 오는 날 가볍게 달릴 때 입을 옷",
         key="recommendation_query",
-    )
-    budget_min, budget_max = st.session_state.budget
-    behavior_weights = database.user_behavior_weights(
-        int(st.session_state.user_id)
-    )
-    trend_scores = database.trend_scores(days=7)
-    purchased_ids = database.purchased_product_ids(
-        int(st.session_state.user_id)
     )
     recommendations = recommend(
         products=products,
@@ -631,7 +1059,7 @@ with recommend_tab:
         favorite_ids=set(st.session_state.favorites),
         budget_min=budget_min,
         budget_max=budget_max,
-        top_n=12,
+        top_n=24,
         behavior_product_weights=behavior_weights,
         trend_product_scores=trend_scores,
         purchased_ids=purchased_ids,
@@ -669,7 +1097,50 @@ with recommend_tab:
             f"최근 7일 트렌드 상품 {len(trend_scores)}개 · "
             f"구매 완료 제외 상품 {len(purchased_ids)}개"
         )
-    product_grid(recommendations, "recommend", show_reasons=True)
+    recommendation_modules = [
+        (
+            "TOP PICKS",
+            "이 추천은 놓치지 마세요",
+            "AI 종합 점수가 가장 높은 취향 맞춤 상품입니다.",
+            recommendations.iloc[0:4],
+            "recommend_top",
+        ),
+        (
+            "BEHAVIOR MATCH",
+            "최근 관심과 이어지는 상품",
+            (
+                "최근 조회·찜·장바구니 행동과 의미가 가까운 상품입니다."
+                if behavior_weights
+                else "첫 방문 취향과 예산을 바탕으로 고른 상품입니다."
+            ),
+            recommendations.iloc[4:8],
+            "recommend_behavior",
+        ),
+        (
+            "TREND NOW",
+            "지금 함께 살펴볼 인기 상품",
+            "최근 트렌드, 평점, 개인화 적합도를 함께 반영했습니다.",
+            recommendations.iloc[8:12],
+            "recommend_trend",
+        ),
+        (
+            "NEW DISCOVERY",
+            "새로운 취향을 발견해 보세요",
+            "같은 카테고리만 반복되지 않도록 다양성을 고려한 추천입니다.",
+            recommendations.iloc[12:16],
+            "recommend_discovery",
+        ),
+    ]
+    for kicker, title, description, module, key in recommendation_modules:
+        if module.empty:
+            continue
+        section_heading(kicker, title, description)
+        product_grid(
+            module,
+            key,
+            show_reasons=True,
+            columns_per_row=4,
+        )
 
 with favorite_tab:
     st.subheader("관심 상품")
@@ -782,3 +1253,27 @@ with cart_tab:
                     f"{order['ordered_at']}"
                 )
                 st.caption(names)
+
+st.markdown(
+    """
+    <section class="trust-strip">
+      <div class="trust-item">
+        <b>🔒 안전한 계정 정보</b>
+        <span>비밀번호는 평문이 아닌 PBKDF2 해시로 MySQL에 저장됩니다.</span>
+      </div>
+      <div class="trust-item">
+        <b>✨ 설명 가능한 추천</b>
+        <span>검색과 행동을 반영한 이유를 상품마다 투명하게 안내합니다.</span>
+      </div>
+      <div class="trust-item">
+        <b>↩️ 안심 데모 쇼핑</b>
+        <span>현재 주문은 포트폴리오 시연용이며 실제 결제는 발생하지 않습니다.</span>
+      </div>
+    </section>
+    <footer class="store-footer">
+      <div><b>StylePick AI</b><br>20·30대 라이프스타일을 위한 AI 커머스 데모</div>
+      <div>배송·교환·반품 안내 · FAQ · 고객지원 · 개인정보처리방침 · 이용약관</div>
+    </footer>
+    """,
+    unsafe_allow_html=True,
+)

@@ -110,7 +110,13 @@ class DatabaseTest(unittest.TestCase):
         order = database.create_order(user_id, "test-session")
         self.assertTrue(order["order_id"].startswith("DEMO-"))
         self.assertEqual(database.load_cart(user_id), {})
-        self.assertEqual(database.list_orders(user_id)[0]["total"], 138_000)
+        product_price = int(
+            self.products.loc[self.products["id"] == "P002", "price"].iloc[0]
+        )
+        self.assertEqual(
+            database.list_orders(user_id)[0]["total"],
+            product_price * 2,
+        )
         self.assertIn("P002", database.purchased_product_ids(user_id))
         self.assertGreater(
             database.behavior_summary(user_id).get("PURCHASE", 0),
