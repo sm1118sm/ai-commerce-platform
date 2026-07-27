@@ -17,10 +17,11 @@ from src.recommender import fit_recommender, recommend
 
 ROOT = Path(__file__).resolve().parent
 PRODUCT_PATH = ROOT / "data" / "products.csv"
-DATABASE_TARGET = os.environ.get(
-    "DATABASE_URL",
-    os.environ.get("STYLEPICK_DB_PATH", str(ROOT / "data" / "stylepick.db")),
-)
+DATABASE_TARGET = os.environ.get("DATABASE_URL")
+if not DATABASE_TARGET:
+    raise RuntimeError(
+        "DATABASE_URL이 필요합니다. .env.example 또는 docker-compose.yml을 참고하세요."
+    )
 
 st.set_page_config(
     page_title="StylePick AI",
@@ -120,6 +121,8 @@ def render_auth() -> None:
         unsafe_allow_html=True,
     )
     st.write("취향과 행동 데이터를 안전하게 분리 저장하려면 로그인해 주세요.")
+    if st.session_state.pop("account_deleted_notice", False):
+        st.success("회원 정보와 연결 데이터가 모두 삭제되었습니다.")
     login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
     with login_tab:
         with st.form("login_form"):
@@ -155,6 +158,12 @@ def render_auth() -> None:
                 key="signup_nickname",
                 max_chars=30,
             )
+            signup_phone = st.text_input(
+                "전화번호",
+                key="signup_phone",
+                placeholder="010-1234-5678",
+                max_chars=20,
+            )
             signup_password = st.text_input(
                 "비밀번호",
                 type="password",
@@ -180,6 +189,7 @@ def render_auth() -> None:
                             signup_email,
                             signup_password,
                             signup_nickname,
+                            signup_phone,
                         )
                         user = database.authenticate(
                             signup_email,
@@ -404,6 +414,33 @@ with st.sidebar:
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
+    with st.expander("회원탈퇴"):
+        st.warning("탈퇴하면 계정, 취향, 찜, 장바구니, 행동 및 주문 데이터가 즉시 삭제됩니다.")
+        with st.form("delete_account_form"):
+            delete_password = st.text_input(
+                "현재 비밀번호",
+                type="password",
+                key="delete_account_password",
+            )
+            delete_confirmed = st.checkbox(
+                "삭제된 데이터는 복구할 수 없음을 확인했습니다."
+            )
+            if st.form_submit_button(
+                "계정 영구 삭제",
+                disabled=not delete_confirmed,
+                width="stretch",
+            ):
+                try:
+                    database.delete_user(
+                        int(st.session_state.user_id),
+                        delete_password,
+                    )
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.session_state.account_deleted_notice = True
+                    st.rerun()
+                except ValueError as error:
+                    st.error(str(error))
 
 st.markdown(
     f"""

@@ -6,7 +6,7 @@
 - GitHub: `https://github.com/sm1118sm/ai-commerce-platform`
 - 기본 브랜치: `main`
 - 배포 앱: `https://ai-commerce-platform-5ovk.onrender.com`
-- 운영 DB: Render PostgreSQL (`DATABASE_URL`은 Render 환경변수로만 관리)
+- 운영 DB: 외부 관리형 MySQL 8 (`DATABASE_URL`은 Render 환경변수로만 관리)
 
 ## 노트북을 종료하기 전
 
@@ -52,23 +52,21 @@ VS Code로 열려면 다음 명령을 실행한다.
 code .
 ```
 
-## 로컬 앱 실행
+## 로컬 앱과 MySQL 실행
 
 ```bash
 cd /home/lsm1118/personalized-commerce-ai
-source .venv/bin/activate
-streamlit run app.py
+cp .env.example .env
+docker compose up --build
 ```
 
-브라우저에서 `http://localhost:8501`에 접속한다. 로컬에서는 별도의
-`DATABASE_URL`을 설정하지 않으면 SQLite를 사용하므로 운영 DB 비밀번호를
-PC나 GitHub에 저장할 필요가 없다.
+브라우저에서 `http://localhost:8501`에 접속한다. 로컬 MySQL 데이터는 Docker
+볼륨에 보관하며 운영 DB 비밀번호를 PC나 GitHub에 저장하지 않는다.
 
-실행을 멈추려면 터미널에서 `Ctrl+C`를 누른다. 가상환경을 종료하려면 다음을
-실행한다.
+실행을 멈추려면 터미널에서 `Ctrl+C`를 누르고 다음 명령을 실행한다.
 
 ```bash
-deactivate
+docker compose down
 ```
 
 ## 테스트 실행
@@ -94,7 +92,8 @@ cd personalized-commerce-ai
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
+cp .env.example .env
+docker compose up --build
 ```
 
 ## 주의사항

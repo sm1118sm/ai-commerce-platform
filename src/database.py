@@ -1,4 +1,4 @@
-"""SQLite backend for users, catalog, behavior, carts, and demo orders."""
+"""MySQL backend for users, catalog, behavior, carts, and demo orders."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ import hmac
 import json
 import os
 import re
-import sqlite3
 import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 import pandas as pd
@@ -39,32 +39,65 @@ def normalize_nickname(nickname: str) -> str:
     return unicodedata.normalize("NFKC", nickname).strip()
 
 
+def normalize_phone(phone_number: str) -> str:
+    """Normalize Korean phone numbers so formatting cannot bypass uniqueness."""
+    digits = re.sub(r"\D", "", unicodedata.normalize("NFKC", phone_number))
+    if digits.startswith("82") and len(digits) in {11, 12}:
+        digits = f"0{digits[2:]}"
+    if not re.fullmatch(r"0\d{9,10}", digits):
+        raise ValueError("전화번호는 010-1234-5678 형식으로 입력하세요.")
+    return digits
+
+
 def is_unique_violation(error: Exception) -> bool:
-    return (
-        isinstance(error, sqlite3.IntegrityError)
-        or getattr(error, "sqlstate", None) == "23505"
-    )
+    return bool(getattr(error, "args", ())) and error.args[0] == 1062
+
+
+def parse_mysql_url(database_url: str) -> dict:
+    """Convert a mysql:// URL into PyMySQL connection arguments."""
+    parsed = urlparse(database_url)
+    if parsed.scheme not in {"mysql", "mysql+pymysql"}:
+        raise ValueError(
+            "DATABASE_URL은 mysql:// 또는 mysql+pymysql:// 형식이어야 합니다."
+        )
+    if not parsed.hostname or not parsed.path.lstrip("/"):
+        raise ValueError("DATABASE_URL에 MySQL 호스트와 데이터베이스명이 필요합니다.")
+
+    options = parse_qs(parsed.query)
+    connect_args = {
+        "host": parsed.hostname,
+        "port": parsed.port or 3306,
+        "user": unquote(parsed.username or ""),
+        "password": unquote(parsed.password or ""),
+        "database": unquote(parsed.path.lstrip("/")),
+        "charset": options.get("charset", ["utf8mb4"])[-1],
+        "connect_timeout": 10,
+        "read_timeout": 20,
+        "write_timeout": 20,
+        "autocommit": False,
+    }
+    if "ssl_ca" in options:
+        connect_args["ssl"] = {"ca": options["ssl_ca"][-1]}
+    elif options.get("ssl", [""])[-1].lower() in {"1", "true", "required"}:
+        connect_args["ssl"] = {}
+    return connect_args
 
 
 class _ConnectionAdapter:
-    """Normalize SQLite and psycopg placeholders/cursor behavior."""
+    """Expose the small connection API used by the application."""
 
-    def __init__(self, raw_connection, backend: str) -> None:
+    def __init__(self, raw_connection) -> None:
         self.raw = raw_connection
-        self.backend = backend
 
     def execute(self, sql: str, parameters=()):
-        if self.backend == "postgres":
-            sql = sql.replace("?", "%s")
-        return self.raw.execute(sql, parameters)
+        cursor = self.raw.cursor()
+        cursor.execute(sql.replace("?", "%s"), parameters)
+        return cursor
 
     def executescript(self, script: str) -> None:
-        if self.backend == "sqlite":
-            self.raw.executescript(script)
-            return
         for statement in script.split(";"):
             if statement.strip():
-                self.raw.execute(statement)
+                self.execute(statement)
 
     def commit(self) -> None:
         self.raw.commit()
@@ -121,39 +154,24 @@ def recency_weight(created_at: str, now: datetime | None = None) -> float:
 
 class StoreDatabase:
     def __init__(self, target: str | Path) -> None:
-        target_text = str(target)
-        self.backend = (
-            "postgres"
-            if target_text.startswith(("postgresql://", "postgres://"))
-            else "sqlite"
-        )
-        self.database_url = target_text if self.backend == "postgres" else None
-        self.path = Path(target_text) if self.backend == "sqlite" else None
-        if self.path is not None:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_url = str(target)
+        self.connection_args = parse_mysql_url(self.database_url)
         self.initialize()
 
     @contextmanager
     def connect(self):
-        if self.backend == "postgres":
-            try:
-                import psycopg
-                from psycopg.rows import dict_row
-            except ImportError as error:
-                raise RuntimeError(
-                    "PostgreSQL 사용 시 `pip install psycopg[binary]`가 필요합니다."
-                ) from error
-            raw_connection = psycopg.connect(
-                self.database_url,
-                row_factory=dict_row,
-                connect_timeout=10,
-            )
-        else:
-            raw_connection = sqlite3.connect(self.path, timeout=10)
-            raw_connection.row_factory = sqlite3.Row
-            raw_connection.execute("PRAGMA foreign_keys = ON")
-            raw_connection.execute("PRAGMA journal_mode = WAL")
-        connection = _ConnectionAdapter(raw_connection, self.backend)
+        try:
+            import pymysql
+            from pymysql.cursors import DictCursor
+        except ImportError as error:
+            raise RuntimeError(
+                "MySQL 사용 시 `pip install PyMySQL`이 필요합니다."
+            ) from error
+        raw_connection = pymysql.connect(
+            **self.connection_args,
+            cursorclass=DictCursor,
+        )
+        connection = _ConnectionAdapter(raw_connection)
         try:
             yield connection
             connection.commit()
@@ -164,112 +182,11 @@ class StoreDatabase:
             connection.close()
 
     def initialize(self) -> None:
-        """Create v2 tables without deleting any earlier MVP data."""
-        if self.backend == "postgres":
-            schema_path = Path(__file__).resolve().parents[1] / "database" / "postgres_schema.sql"
-            schema = schema_path.read_text(encoding="utf-8")
-            with self.connect() as connection:
-                connection.executescript(schema)
-            return
+        """Create MySQL tables without deleting existing data."""
+        schema_path = Path(__file__).resolve().parents[1] / "database" / "mysql_schema.sql"
+        schema = schema_path.read_text(encoding="utf-8")
         with self.connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    password_hash TEXT NOT NULL,
-                    nickname TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT 'USER',
-                    status TEXT NOT NULL DEFAULT 'ACTIVE',
-                    created_at TEXT NOT NULL,
-                    last_login_at TEXT
-                );
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique_ci
-                    ON users(LOWER(TRIM(email)));
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique_ci
-                    ON users(LOWER(TRIM(nickname)));
-
-                CREATE TABLE IF NOT EXISTS products (
-                    product_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    price INTEGER NOT NULL CHECK (price >= 0),
-                    popularity INTEGER NOT NULL DEFAULT 0,
-                    rating REAL NOT NULL DEFAULT 0,
-                    emoji TEXT NOT NULL,
-                    stock INTEGER NOT NULL DEFAULT 20 CHECK (stock >= 0),
-                    tags TEXT NOT NULL DEFAULT '',
-                    brand TEXT NOT NULL DEFAULT 'StylePick'
-                );
-
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    user_id INTEGER PRIMARY KEY,
-                    interests_json TEXT NOT NULL DEFAULT '[]',
-                    budget_min INTEGER NOT NULL DEFAULT 0,
-                    budget_max INTEGER NOT NULL DEFAULT 250000,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS user_favorites (
-                    user_id INTEGER NOT NULL,
-                    product_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (user_id, product_id),
-                    FOREIGN KEY (user_id) REFERENCES users(id),
-                    FOREIGN KEY (product_id) REFERENCES products(product_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS user_cart (
-                    user_id INTEGER NOT NULL,
-                    product_id TEXT NOT NULL,
-                    quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 10),
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (user_id, product_id),
-                    FOREIGN KEY (user_id) REFERENCES users(id),
-                    FOREIGN KEY (product_id) REFERENCES products(product_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS behavior_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    session_id TEXT NOT NULL,
-                    product_id TEXT,
-                    action_type TEXT NOT NULL,
-                    search_keyword TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id),
-                    FOREIGN KEY (product_id) REFERENCES products(product_id)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_behavior_user_time
-                    ON behavior_logs(user_id, created_at);
-                CREATE INDEX IF NOT EXISTS idx_behavior_product_time
-                    ON behavior_logs(product_id, created_at);
-
-                CREATE TABLE IF NOT EXISTS user_orders (
-                    order_id TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    total INTEGER NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    status TEXT NOT NULL,
-                    ordered_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS order_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    order_id TEXT NOT NULL,
-                    product_id TEXT NOT NULL,
-                    product_name TEXT NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    unit_price INTEGER NOT NULL,
-                    FOREIGN KEY (order_id) REFERENCES user_orders(order_id)
-                );
-                """
-            )
+            connection.executescript(schema)
 
     def seed_products(self, frame: pd.DataFrame) -> None:
         """Upsert catalog text while preserving stock changed by orders."""
@@ -281,16 +198,16 @@ class StoreDatabase:
                         product_id, name, category, description, price,
                         popularity, rating, emoji, stock, tags, brand
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(product_id) DO UPDATE SET
-                        name = excluded.name,
-                        category = excluded.category,
-                        description = excluded.description,
-                        price = excluded.price,
-                        popularity = excluded.popularity,
-                        rating = excluded.rating,
-                        emoji = excluded.emoji,
-                        tags = excluded.tags,
-                        brand = excluded.brand
+                    ON DUPLICATE KEY UPDATE
+                        name = VALUES(name),
+                        category = VALUES(category),
+                        description = VALUES(description),
+                        price = VALUES(price),
+                        popularity = VALUES(popularity),
+                        rating = VALUES(rating),
+                        emoji = VALUES(emoji),
+                        tags = VALUES(tags),
+                        brand = VALUES(brand)
                     """,
                     (
                         str(product["id"]),
@@ -325,9 +242,11 @@ class StoreDatabase:
         email: str,
         password: str,
         nickname: str,
+        phone_number: str,
     ) -> dict:
         email = normalize_email(email)
         nickname = normalize_nickname(nickname)
+        phone_number = normalize_phone(phone_number)
         if not EMAIL_PATTERN.match(email):
             raise ValueError("올바른 이메일 주소를 입력하세요.")
         if len(password) < 8:
@@ -357,24 +276,31 @@ class StoreDatabase:
                 ).fetchone()
                 if duplicate_nickname:
                     raise ValueError("이미 사용 중인 닉네임입니다.")
+                duplicate_phone = connection.execute(
+                    "SELECT 1 FROM users WHERE phone_number = ?",
+                    (phone_number,),
+                ).fetchone()
+                if duplicate_phone:
+                    raise ValueError(
+                        "이미 가입된 전화번호입니다. 한 번호당 하나의 계정만 만들 수 있습니다."
+                    )
                 insert_sql = """
                     INSERT INTO users(
-                        email, password_hash, nickname, role, status, created_at
-                    ) VALUES (?, ?, ?, 'USER', 'ACTIVE', ?)
+                        email, password_hash, nickname, phone_number,
+                        role, status, created_at
+                    ) VALUES (?, ?, ?, ?, 'USER', 'ACTIVE', ?)
                 """
-                if self.backend == "postgres":
-                    insert_sql += " RETURNING id"
-                    cursor = connection.execute(
-                        insert_sql,
-                        (email, hash_password(password), nickname, now),
-                    )
-                    user_id = int(cursor.fetchone()["id"])
-                else:
-                    cursor = connection.execute(
-                        insert_sql,
-                        (email, hash_password(password), nickname, now),
-                    )
-                    user_id = int(cursor.lastrowid)
+                cursor = connection.execute(
+                    insert_sql,
+                    (
+                        email,
+                        hash_password(password),
+                        nickname,
+                        phone_number,
+                        now,
+                    ),
+                )
+                user_id = int(cursor.lastrowid)
                 connection.execute(
                     """
                     INSERT INTO user_preferences(
@@ -388,7 +314,12 @@ class StoreDatabase:
         except Exception as error:
             if not is_unique_violation(error):
                 raise
-            if "nickname" in str(error).lower():
+            error_text = str(error).lower()
+            if "phone" in error_text:
+                raise ValueError(
+                    "이미 가입된 전화번호입니다. 한 번호당 하나의 계정만 만들 수 있습니다."
+                ) from error
+            if "nickname" in error_text:
                 raise ValueError("이미 사용 중인 닉네임입니다.") from error
             raise ValueError(
                 "이미 가입된 이메일입니다. 한 이메일당 하나의 계정만 만들 수 있습니다."
@@ -404,7 +335,12 @@ class StoreDatabase:
             ).fetchone()
         if row:
             return self.get_user(int(row["id"]))
-        return self.register_user(email, "stylepick-demo", "데모 사용자")
+        return self.register_user(
+            email,
+            "stylepick-demo",
+            "데모 사용자",
+            "01000000000",
+        )
 
     def authenticate(self, email: str, password: str) -> dict:
         email = normalize_email(email)
@@ -437,6 +373,22 @@ class StoreDatabase:
         if row is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
         return dict(row)
+
+    def delete_user(self, user_id: int, password: str) -> None:
+        """Permanently delete a member and all rows owned by that member."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT password_hash FROM users WHERE id = ?",
+                (int(user_id),),
+            ).fetchone()
+            if row is None or not verify_password(password, row["password_hash"]):
+                raise ValueError("비밀번호가 올바르지 않습니다.")
+            deleted = connection.execute(
+                "DELETE FROM users WHERE id = ?",
+                (int(user_id),),
+            )
+            if deleted.rowcount != 1:
+                raise ValueError("회원탈퇴를 완료하지 못했습니다.")
 
     def load_profile(self, user_id: int) -> dict:
         with self.connect() as connection:
@@ -494,11 +446,11 @@ class StoreDatabase:
                     INSERT INTO user_preferences(
                         user_id, interests_json, budget_min, budget_max, updated_at
                     ) VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET
-                        interests_json = excluded.interests_json,
-                        budget_min = excluded.budget_min,
-                        budget_max = excluded.budget_max,
-                        updated_at = excluded.updated_at
+                    ON DUPLICATE KEY UPDATE
+                        interests_json = VALUES(interests_json),
+                        budget_min = VALUES(budget_min),
+                        budget_max = VALUES(budget_max),
+                        updated_at = VALUES(updated_at)
                     """,
                     (
                         int(user_id),
@@ -621,9 +573,9 @@ class StoreDatabase:
                 """
                 INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(user_id, product_id) DO UPDATE SET
-                    quantity = excluded.quantity,
-                    updated_at = excluded.updated_at
+                ON DUPLICATE KEY UPDATE
+                    quantity = VALUES(quantity),
+                    updated_at = VALUES(updated_at)
                 """,
                 (
                     int(user_id),
@@ -657,7 +609,7 @@ class StoreDatabase:
 
     def _log_behavior(
         self,
-        connection: sqlite3.Connection,
+        connection: _ConnectionAdapter,
         user_id: int,
         session_id: str,
         product_id: str | None,

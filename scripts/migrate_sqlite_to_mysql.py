@@ -1,4 +1,4 @@
-"""Copy the current StylePick SQLite data into an empty PostgreSQL database."""
+"""Copy the current StylePick SQLite data into an empty MySQL database."""
 
 from __future__ import annotations
 
@@ -126,8 +126,8 @@ def main() -> None:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise SystemExit("DATABASE_URL 환경변수가 필요합니다.")
-    if not database_url.startswith(("postgresql://", "postgres://")):
-        raise SystemExit("DATABASE_URL은 PostgreSQL 주소여야 합니다.")
+    if not database_url.startswith(("mysql://", "mysql+pymysql://")):
+        raise SystemExit("DATABASE_URL은 MySQL 주소여야 합니다.")
     if not args.sqlite.exists():
         raise SystemExit(f"SQLite 파일을 찾을 수 없습니다: {args.sqlite}")
 
@@ -136,7 +136,7 @@ def main() -> None:
         existing_users = connection.execute("SELECT COUNT(*) AS count FROM users").fetchone()
         if int(existing_users["count"]) > 0:
             raise SystemExit(
-                "대상 PostgreSQL에 회원 데이터가 있습니다. 안전을 위해 중단했습니다."
+                "대상 MySQL에 회원 데이터가 있습니다. 안전을 위해 중단했습니다."
             )
 
     source = sqlite3.connect(args.sqlite)
@@ -164,28 +164,13 @@ def main() -> None:
                     )
                 counts[table] = len(rows)
 
-            for table, column in [
-                ("users", "id"),
-                ("behavior_logs", "id"),
-                ("order_items", "id"),
-            ]:
-                destination_connection.execute(
-                    f"""
-                    SELECT setval(
-                        pg_get_serial_sequence('{table}', '{column}'),
-                        COALESCE((SELECT MAX({column}) FROM {table}), 1),
-                        true
-                    )
-                    """  # noqa: S608
-                )
     finally:
         source.close()
 
-    print("PostgreSQL migration completed")
+    print("MySQL migration completed")
     for table, count in counts.items():
         print(f"{table}: {count}")
 
 
 if __name__ == "__main__":
     main()
-
