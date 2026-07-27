@@ -24,8 +24,10 @@
 - Aiven에서 임시 회원 가입·로그인·중복 차단·탈퇴 실연결 검증
 - 모든 GitHub 변경을 기능 브랜치 → PR → CI → `main` 병합으로 관리
 
-현재 배포 복구 작업은 PR #6에서 진행한다. 병합 후 Render의
-`DATABASE_URL`을 Aiven Service URI로 설정하고 공개 주소에서 최종 확인한다.
+- PR #6: 공용 Aiven MySQL 연결과 TLS 처리 병합 완료
+- PR #7: 핵심 중심 README 개편 완료
+- Render `DATABASE_URL`: Aiven Service URI로 설정 완료
+- 최종 배포: `e159ee0`, Render 상태 `live`, MySQL 사전 점검과 HTTP 200 확인
 
 ## 노트북을 종료하기 전
 

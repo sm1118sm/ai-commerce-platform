@@ -54,9 +54,9 @@
 - [x] Aiven MySQL 8.4 무료 서비스를 운영 DB로 선정
 - [x] Aiven TLS 연결과 스키마·상품 시드 초기화 검증
 - [ ] 개발·테스트·운영 DB 분리
-- [ ] 운영 Secret에 `DATABASE_URL` 등록
+- [x] 운영 Secret에 Aiven MySQL `DATABASE_URL` 등록
 - [x] Render HTTPS 공개 URL 생성
-- [ ] 공개 URL을 Aiven MySQL로 연결해 정상 화면 복구
+- [x] 공개 URL을 Aiven MySQL로 연결해 정상 화면 복구
 - [x] `main` 병합 시 Render 자동 배포 구성
 - [ ] 서버 재시작과 재배포 후 데이터 영속성 확인
 - [ ] 자동 백업 주기와 보관 기간 결정
