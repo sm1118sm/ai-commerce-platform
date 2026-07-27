@@ -7,8 +7,10 @@ from pathlib import Path
 from src.catalog import load_products
 from src.database import (
     StoreDatabase,
+    database_kind,
     normalize_phone,
     parse_mysql_url,
+    parse_postgres_url,
     validate_password,
 )
 
@@ -46,9 +48,19 @@ class DatabaseHelpersTest(unittest.TestCase):
         self.assertEqual(parsed["database"], "stylepick")
         self.assertIn("ssl", parsed)
 
-    def test_non_mysql_url_is_rejected(self) -> None:
+    def test_postgres_url_is_parsed(self) -> None:
+        parsed = parse_postgres_url(
+            "postgresql://stylepick:p%40ss@db.example.com:5432/stylepick_test"
+        )
+        self.assertEqual(parsed["database"], "stylepick_test")
+        self.assertEqual(
+            database_kind("postgresql://db.example.com/stylepick_test"),
+            "postgresql",
+        )
+
+    def test_unknown_database_url_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "mysql"):
-            parse_mysql_url("postgresql://localhost/stylepick")
+            database_kind("sqlite:///stylepick.db")
 
     def test_phone_formats_share_one_normalized_value(self) -> None:
         self.assertEqual(normalize_phone("010-1234-5678"), "01012345678")
@@ -66,7 +78,7 @@ class DatabaseHelpersTest(unittest.TestCase):
 
 @unittest.skipUnless(
     TEST_DATABASE_URL,
-    "STYLEPICK_TEST_DATABASE_URL이 없어 MySQL 통합 테스트를 건너뜁니다.",
+    "STYLEPICK_TEST_DATABASE_URL이 없어 DB 통합 테스트를 건너뜁니다.",
 )
 class DatabaseTest(unittest.TestCase):
     def setUp(self) -> None:

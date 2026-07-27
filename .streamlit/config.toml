@@ -1,3 +1,7 @@
+[client]
+showErrorDetails = "none"
+toolbarMode = "minimal"
+
 [theme]
 primaryColor = "#6D5DFC"
 backgroundColor = "#F7F8FC"
@@ -10,4 +14,3 @@ headless = true
 
 [browser]
 gatherUsageStats = false
-

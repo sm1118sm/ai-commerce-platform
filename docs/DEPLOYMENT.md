@@ -1,11 +1,12 @@
-# StylePick AI MySQL 배포 절차
+# StylePick AI 데이터베이스·앱 배포 절차
 
 ## 준비된 배포 구성
 
 - `Dockerfile`: Python 3.12 기반 Streamlit 이미지
 - `docker-compose.yml`: 로컬 앱과 MySQL 8 실행
 - `render.yaml`: Render 웹 서비스 설정
-- `database/mysql_schema.sql`: MySQL 8 운영 스키마
+- `database/mysql_schema.sql`: 로컬 Docker용 MySQL 8 스키마
+- `database/postgres_schema.sql`: Render 운영용 PostgreSQL 스키마
 - `scripts/migrate_sqlite_to_mysql.py`: 기존 SQLite 데이터 이전
 - `/_stcore/health`: 배포 상태 확인 경로
 
@@ -25,9 +26,10 @@ docker compose down
 
 `mysql_data` 볼륨을 삭제하지 않는 한 데이터는 유지된다.
 
-## 2. 운영 MySQL 준비
+## 2. 운영 데이터베이스 준비
 
-MySQL 8 호환 관리형 데이터베이스를 생성하고 다음 정보를 확인한다.
+Render 기본 배포는 관리형 PostgreSQL을 사용한다. 별도 관리형 MySQL을
+선택한 경우에도 동일한 앱을 사용할 수 있다. 다음 정보를 확인한다.
 
 - 호스트
 - 포트(기본값 `3306`)
@@ -39,6 +41,7 @@ MySQL 8 호환 관리형 데이터베이스를 생성하고 다음 정보를 확
 
 ```text
 mysql://사용자명:비밀번호@호스트:3306/데이터베이스명?ssl=true
+postgresql://사용자명:비밀번호@호스트:5432/데이터베이스명
 ```
 
 비밀번호에 `@`, `:`, `/` 같은 문자가 있으면 URL 인코딩해야 한다.
@@ -48,14 +51,15 @@ mysql://사용자명:비밀번호@호스트:3306/데이터베이스명?ssl=true
 1. Render Dashboard에서 `New` → `Blueprint`를 선택한다.
 2. GitHub의 StylePick AI 저장소를 연결한다.
 3. 저장소 루트의 `render.yaml`을 적용한다.
-4. `DATABASE_URL` Secret에 운영 MySQL 접속 주소를 입력한다.
+4. `DATABASE_URL` Secret에 운영 PostgreSQL 또는 MySQL 접속 주소를 입력한다.
 5. 배포 로그와 `/_stcore/health` 응답을 확인한다.
 
 `render.yaml`의 `autoDeployTrigger: commit` 설정으로 GitHub `main`에 새
 커밋이 병합될 때마다 Streamlit Docker 서비스가 자동으로 다시 배포된다.
 
-Render는 관리형 MySQL을 직접 생성하지 않으므로 외부 MySQL을 먼저 준비해야
-한다. `DATABASE_URL`을 YAML이나 GitHub에 직접 넣지 않는다.
+MySQL을 선택하면 Render가 관리형 MySQL을 직접 생성하지 않으므로 외부
+MySQL을 먼저 준비해야 한다. `DATABASE_URL`을 YAML이나 GitHub에 직접 넣지
+않는다.
 
 ## 4. 기존 SQLite 데이터를 옮길 경우
 

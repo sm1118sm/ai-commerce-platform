@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+import logging
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -424,7 +425,18 @@ def get_products() -> pd.DataFrame:
     return load_products(PRODUCT_PATH)
 
 
-database = StoreDatabase(DATABASE_TARGET)
+try:
+    database = StoreDatabase(DATABASE_TARGET)
+except Exception:
+    if os.environ.get("APP_ENV", "development").lower() == "production":
+        logging.exception("StylePick database initialization failed")
+        st.error(
+            "서비스 데이터베이스에 연결하지 못했습니다. "
+            "잠시 후 다시 시도해 주세요.",
+            icon="🛠️",
+        )
+        st.stop()
+    raise
 database.seed_products(get_products())
 products = database.load_products()
 RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
