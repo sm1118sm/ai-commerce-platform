@@ -55,7 +55,7 @@
 - 취향 설정
 - 실제 TF-IDF 추천과 추천 이유
 - 회원별 행동 로그와 최근성 가중치
-- SQLite 회원·상품·재고·주문 저장
+- MySQL 8 회원·상품·재고·주문 저장
 - 로컬 실행 및 기본 테스트
 
 ### P1 — 시간이 있으면 구현
@@ -76,7 +76,7 @@
 
 ## 7. 기술 스택 비교와 최종 선정
 
-| 항목 | Streamlit + Python | React + FastAPI + SQLite |
+| 항목 | Streamlit + Python + MySQL | React + FastAPI + MySQL |
 |---|---:|---:|
 | 화면 개발 속도 | 매우 빠름 | 느림 |
 | 추천 모델 연결 | 직접 연결 | API 개발 필요 |
@@ -85,7 +85,7 @@
 | 배포 구성 | 앱 하나 | 프론트·백 2개 |
 | 3일 완성 위험 | 낮음 | 중간~높음 |
 
-최종 선택은 **Streamlit + Python + pandas + scikit-learn + SQLite**다.
+최종 선택은 **Streamlit + Python + pandas + scikit-learn + MySQL 8**이다.
 한 언어와 한 프로세스로 전 기능을 구현해 시연 안정성을 확보한다. 3일
 프로젝트에서는 React의 디자인 이점보다 기능 연결과 오류 수정 시간이 더
 중요하다.
@@ -164,8 +164,8 @@ personalized-commerce-ai/
 
 ## 11. 사용자 관심 데이터 구조
 
-화면 상태는 `st.session_state`로 즉시 반영하고, 실제 데이터는 로컬
-SQLite의 `data/stylepick.db`에 저장한다.
+화면 상태는 `st.session_state`로 즉시 반영하고, 실제 데이터는 MySQL의
+`stylepick` 데이터베이스에 저장한다.
 
 ```python
 {
@@ -248,7 +248,7 @@ scikit-learn
 
 - `app.py`: 전체 UI, 세션 상태, 상세 모달, 찜, 장바구니, 모의 주문
 - `src/catalog.py`: CSV 로딩, 필수 컬럼과 ID 검증
-- `src/database.py`: 프로필, 찜, 장바구니, 모의 주문 SQLite 저장
+- `src/database.py`: 프로필, 찜, 장바구니, 모의 주문 MySQL 저장
 - `src/recommender.py`: TF-IDF 학습, 점수 계산, 추천 이유
 - `data/products.csv`: 6개 카테고리의 샘플 상품 30개
 - `tests/test_recommender.py`: 추천 정확성·콜드 스타트·점수 범위 테스트
@@ -298,7 +298,7 @@ streamlit run app.py
 - CSV 오류: 실행 위치와 `data/products.csv` 존재 여부 확인
 - 포트 충돌: `streamlit run app.py --server.port 8502`
 - 추천 결과 없음: 가격 범위를 넓히거나 필터 초기화
-- 상태 복구 실패: `data/stylepick.db` 쓰기 권한 확인
+- 상태 복구 실패: `DATABASE_URL`과 MySQL 접속 상태 확인
 - 한글 깨짐: CSV를 UTF-8로 저장
 - 배포 실패: 저장소 루트와 `requirements.txt` 위치 확인
 
@@ -365,8 +365,8 @@ TF-IDF는 상품 말뭉치에서 어휘와 역문서 빈도 가중치를 학습�
 
 ### 개인정보는 어디에 저장하나요?
 
-이메일, PBKDF2 비밀번호 해시, 닉네임과 취향은 로컬 SQLite에 저장되며 외부
-서버로 전송하지 않습니다. 비밀번호 원문은 저장하지 않습니다.
+이메일, PBKDF2 비밀번호 해시, 닉네임과 취향은 MySQL에 저장됩니다.
+비밀번호 원문은 저장하지 않습니다.
 
 ### 콜드 스타트는 어떻게 해결했나요?
 
@@ -387,12 +387,12 @@ TF-IDF는 상품 말뭉치에서 어휘와 역문서 빈도 가중치를 학습�
 
 - 샘플 상품 30개이므로 실제 추천 품질을 일반화할 수 없다.
 - 실제 운영 규모의 행동 로그가 없어 협업 필터링과 정량 정확도 평가가 없다.
-- 로컬 SQLite이므로 여러 서버 간 확장과 이메일 인증은 지원하지 않는다.
+- 현재는 이메일 인증과 비밀번호 재설정을 지원하지 않는다.
 - 수동 가중치는 실제 로그를 이용해 학습하거나 A/B 테스트해야 한다.
 - 상품 이미지는 네트워크 안정성을 위해 이모지로 대체했다.
 
 향후에는 implicit feedback 추천, 사전 학습 문장 임베딩 비교, A/B 테스트
-대시보드, 외부 PostgreSQL과 실제 상품 API 연동 순으로 발전시킨다.
+대시보드, MySQL 운영 자동화와 실제 상품 API 연동 순으로 발전시킨다.
 
 ## 3일 개발 일정
 

@@ -12,7 +12,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 @dataclass(frozen=True)
 class RecommendationModel:
-    vectorizer: TfidfVectorizer
+    backend: str
+    vectorizer: TfidfVectorizer | None
+    encoder: object | None
     product_matrix: object
 
 
@@ -33,15 +35,64 @@ def product_text(frame: pd.DataFrame) -> pd.Series:
     return text
 
 
-def fit_recommender(products: pd.DataFrame) -> RecommendationModel:
-    """Fit TF-IDF vocabulary and IDF weights on the small product catalog."""
+def fit_recommender(
+    products: pd.DataFrame,
+    backend: str = "tfidf",
+) -> RecommendationModel:
+    """Fit the selected text retrieval backend on the product catalog."""
+    if backend == "e5":
+        from sentence_transformers import SentenceTransformer
+
+        encoder = SentenceTransformer("intfloat/multilingual-e5-small")
+        passages = [
+            f"passage: {text}" for text in product_text(products).tolist()
+        ]
+        matrix = encoder.encode(
+            passages,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        return RecommendationModel(
+            backend=backend,
+            vectorizer=None,
+            encoder=encoder,
+            product_matrix=matrix,
+        )
+    if backend != "tfidf":
+        raise ValueError(f"지원하지 않는 추천 백엔드입니다: {backend}")
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
         min_df=1,
         sublinear_tf=True,
     )
     matrix = vectorizer.fit_transform(product_text(products))
-    return RecommendationModel(vectorizer=vectorizer, product_matrix=matrix)
+    return RecommendationModel(
+        backend=backend,
+        vectorizer=vectorizer,
+        encoder=None,
+        product_matrix=matrix,
+    )
+
+
+def _text_similarity(model: RecommendationModel, text: str) -> np.ndarray:
+    if not text.strip():
+        return np.zeros(model.product_matrix.shape[0])
+    if model.backend == "e5":
+        vector = model.encoder.encode(
+            [f"query: {text}"],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )[0]
+        raw_scores = np.asarray(model.product_matrix @ vector)
+        minimum = float(raw_scores.min())
+        maximum = float(raw_scores.max())
+        if maximum == minimum:
+            return np.ones(len(raw_scores))
+        return (raw_scores - minimum) / (maximum - minimum)
+    vector = model.vectorizer.transform([text])
+    return cosine_similarity(vector, model.product_matrix).ravel()
 
 
 def _normalize(values: pd.Series) -> np.ndarray:
@@ -63,6 +114,7 @@ def recommend(
     behavior_product_weights: dict[str, float] | None = None,
     trend_product_scores: dict[str, float] | None = None,
     purchased_ids: set[str] | None = None,
+    query_text: str = "",
 ) -> pd.DataFrame:
     """Rank products with explicit taste, recent behavior, and recent trends."""
     behavior_product_weights = behavior_product_weights or {}
@@ -71,21 +123,18 @@ def recommend(
     favorites = products[products["id"].isin(favorite_ids)]
     interest_text = " ".join(interests * 3)
     favorite_text = " ".join(product_text(favorites).tolist())
-    profile_text = f"{interest_text} {favorite_text}".strip()
-
-    if profile_text:
-        profile_vector = model.vectorizer.transform([profile_text])
-        content_score = cosine_similarity(
-            profile_vector,
-            model.product_matrix,
-        ).ravel()
-    else:
-        content_score = np.zeros(len(products))
+    profile_text = f"{query_text} {interest_text} {favorite_text}".strip()
+    content_score = _text_similarity(model, profile_text)
 
     positive_behavior = {
         product_id: score
         for product_id, score in behavior_product_weights.items()
         if score > 0
+    }
+    negative_behavior = {
+        product_id: score
+        for product_id, score in behavior_product_weights.items()
+        if score < 0
     }
     behavior_parts: list[str] = []
     for product_id, weight in positive_behavior.items():
@@ -95,13 +144,15 @@ def recommend(
         repetitions = max(1, min(8, int(round(weight))))
         behavior_parts.extend(product_text(matched).tolist() * repetitions)
     if behavior_parts:
-        behavior_vector = model.vectorizer.transform([" ".join(behavior_parts)])
-        behavior_score = cosine_similarity(
-            behavior_vector,
-            model.product_matrix,
-        ).ravel()
+        behavior_score = _text_similarity(model, " ".join(behavior_parts))
     else:
         behavior_score = np.zeros(len(products))
+    negative_behavior_score = np.array(
+        [
+            min(1.0, abs(float(negative_behavior.get(product_id, 0))) / 5.0)
+            for product_id in products["id"]
+        ]
+    )
 
     category_score = products["category"].isin(interests).astype(float).to_numpy()
     prices = products["price"].astype(float).to_numpy()
@@ -122,22 +173,30 @@ def recommend(
     if not trend_product_scores:
         trend_score = popularity_score
 
-    if not interests and not favorite_ids and not positive_behavior:
+    if (
+        not query_text.strip()
+        and not interests
+        and not favorite_ids
+        and not behavior_product_weights
+    ):
         final_score = (
             0.25 * budget_score
-            + 0.20 * popularity_score
-            + 0.10 * rating_score
-            + 0.45 * trend_score
+            + 0.25 * popularity_score
+            + 0.15 * rating_score
+            + 0.35 * trend_score
         )
         mode = "cold_start"
     else:
         final_score = (
-            0.35 * content_score
+            0.30 * content_score
             + 0.20 * category_score
             + 0.20 * behavior_score
             + 0.10 * budget_score
-            + 0.15 * trend_score
+            + 0.10 * trend_score
+            + 0.10 * rating_score
+            - 0.15 * negative_behavior_score
         )
+        final_score = np.clip(final_score, 0.0, 1.0)
         mode = "personalized"
 
     ranked = products.copy()
@@ -145,6 +204,7 @@ def recommend(
     ranked["text_score"] = content_score
     ranked["category_score"] = category_score
     ranked["behavior_score"] = behavior_score
+    ranked["negative_behavior_score"] = negative_behavior_score
     ranked["budget_score"] = budget_score
     ranked["popularity_score"] = popularity_score
     ranked["trend_score"] = trend_score
@@ -177,6 +237,7 @@ def recommend(
             interests,
             bool(favorite_ids),
             bool(positive_behavior),
+            bool(query_text.strip()),
         ),
         axis=1,
     )
@@ -188,9 +249,12 @@ def build_reason(
     interests: list[str],
     has_favorites: bool,
     has_behavior: bool = False,
+    has_query: bool = False,
 ) -> str:
     candidates: list[tuple[float, str]] = []
     priority_reasons: list[str] = []
+    if has_query and float(product["content_score"]) > 0:
+        priority_reasons.append("입력한 쇼핑 의도와 의미가 유사합니다")
     if product["category"] in interests:
         candidates.append(
             (float(product["category_score"]) * 0.20, f"관심 카테고리인 {product['category']} 상품입니다")

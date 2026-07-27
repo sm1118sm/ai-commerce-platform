@@ -1,73 +1,71 @@
-# StylePick AI HTTPS 배포 절차
+# StylePick AI MySQL 배포 절차
 
 ## 준비된 배포 구성
 
 - `Dockerfile`: Python 3.12 기반 Streamlit 이미지
-- `render.yaml`: Render 웹 서비스와 PostgreSQL Blueprint
-- `database/postgres_schema.sql`: 운영 DB 스키마
-- `scripts/migrate_sqlite_to_postgres.py`: SQLite 데이터 이전
+- `docker-compose.yml`: 로컬 앱과 MySQL 8 실행
+- `render.yaml`: Render 웹 서비스 설정
+- `database/mysql_schema.sql`: MySQL 8 운영 스키마
+- `scripts/migrate_sqlite_to_mysql.py`: 기존 SQLite 데이터 이전
 - `/_stcore/health`: 배포 상태 확인 경로
 
-## 1. GitHub 저장소 만들기
-
-GitHub에서 비어 있는 저장소를 만든 후 프로젝트 폴더에서 실행한다.
+## 1. 로컬에서 MySQL 버전 확인
 
 ```bash
-git remote add origin https://github.com/사용자명/stylepick-ai.git
-git branch -M main
-git push -u origin main
+cp .env.example .env
+docker compose up --build
 ```
 
-`data/stylepick.db`, `.env`, `.venv`는 `.gitignore`에 의해 업로드되지 않는다.
-
-## 2. Render Blueprint 배포
-
-1. Render Dashboard에 로그인한다.
-2. `New` → `Blueprint`를 선택한다.
-3. GitHub의 StylePick AI 저장소를 연결한다.
-4. 저장소 루트의 `render.yaml`을 선택한다.
-5. 웹 서비스와 PostgreSQL 생성 내용을 확인한다.
-6. Blueprint를 적용한다.
-
-`DATABASE_URL`은 Blueprint가 PostgreSQL의 내부 연결 주소를 웹 서비스에
-자동 전달한다. 비밀번호를 YAML에 직접 넣지 않는다.
-
-## 3. 최초 배포 확인
-
-Render 로그에서 다음 항목을 확인한다.
-
-```text
-Successfully installed ...
-Uvicorn server started ...
-```
-
-배포 주소에서 확인:
-
-```text
-https://stylepick-ai.onrender.com/_stcore/health
-```
-
-정상 응답:
-
-```text
-ok
-```
-
-실제 서비스 이름에 따라 주소의 앞부분은 달라질 수 있다.
-
-## 4. SQLite 데이터를 옮길 경우
-
-새 PostgreSQL이 비어 있을 때만 실행한다.
+브라우저에서 `http://localhost:8501`에 접속해 회원가입, 찜, 장바구니와 모의
+주문까지 확인한다. 앱과 DB를 중지할 때는 다음 명령을 사용한다.
 
 ```bash
-export DATABASE_URL='postgresql://...'
-python scripts/migrate_sqlite_to_postgres.py \
-  --sqlite data/stylepick.db
+docker compose down
 ```
 
-대상 PostgreSQL에 회원 데이터가 이미 있으면 스크립트가 자동 중단한다.
+`mysql_data` 볼륨을 삭제하지 않는 한 데이터는 유지된다.
 
-## 5. 배포 후 필수 시나리오
+## 2. 운영 MySQL 준비
+
+MySQL 8 호환 관리형 데이터베이스를 생성하고 다음 정보를 확인한다.
+
+- 호스트
+- 포트(기본값 `3306`)
+- 데이터베이스명
+- 사용자명과 비밀번호
+- 서비스가 요구하는 TLS 설정
+
+접속 주소 형식:
+
+```text
+mysql://사용자명:비밀번호@호스트:3306/데이터베이스명?ssl=true
+```
+
+비밀번호에 `@`, `:`, `/` 같은 문자가 있으면 URL 인코딩해야 한다.
+
+## 3. Render 웹 서비스 배포
+
+1. Render Dashboard에서 `New` → `Blueprint`를 선택한다.
+2. GitHub의 StylePick AI 저장소를 연결한다.
+3. 저장소 루트의 `render.yaml`을 적용한다.
+4. `DATABASE_URL` Secret에 운영 MySQL 접속 주소를 입력한다.
+5. 배포 로그와 `/_stcore/health` 응답을 확인한다.
+
+Render는 관리형 MySQL을 직접 생성하지 않으므로 외부 MySQL을 먼저 준비해야
+한다. `DATABASE_URL`을 YAML이나 GitHub에 직접 넣지 않는다.
+
+## 4. 기존 SQLite 데이터를 옮길 경우
+
+대상 MySQL에 회원 데이터가 없을 때 실행한다.
+
+```bash
+export DATABASE_URL='mysql://...'
+python scripts/migrate_sqlite_to_mysql.py --sqlite data/stylepick.db
+```
+
+대상 MySQL에 회원 데이터가 있으면 안전을 위해 스크립트가 중단된다.
+
+## 5. 배포 후 필수 확인
 
 1. 신규 회원가입
 2. 로그아웃 후 다시 로그인
@@ -79,28 +77,16 @@ python scripts/migrate_sqlite_to_postgres.py \
 8. 다른 회원으로 로그인해 데이터 격리 확인
 9. 재배포 후 데이터 유지 확인
 
-## 6. 무료 배포 제한
+## 6. 운영 주의사항
 
-Render 무료 웹 서비스는 일정 시간 요청이 없으면 내려가며 첫 접속에 시간이
-걸릴 수 있다. 로컬 SQLite 파일은 재시작 시 유실되므로 반드시 PostgreSQL을
-사용한다.
-
-무료 Render PostgreSQL은 30일 후 만료되고 백업 기능이 없다. 발표 일정이
-30일 이상 남았다면 발표일에 맞춰 생성하거나, 유료 DB 또는 다른 관리형
-PostgreSQL을 연결한다.
+- MySQL과 앱 서버는 가능하면 가까운 리전에 배치한다.
+- 개발·테스트·운영 DB를 분리한다.
+- 자동 백업과 복원 절차를 확인한다.
+- 무료 DB의 중지·용량·접속 수 제한을 확인한다.
+- 운영 DB에는 `STYLEPICK_TEST_DATABASE_URL`을 절대 지정하지 않는다.
 
 공식 문서:
 
 - [Render Blueprint YAML](https://render.com/docs/blueprint-spec)
-- [Render 무료 서비스 제한](https://render.com/docs/free)
 - [Render Docker 배포](https://render.com/docs/docker)
-
-## 7. 현재 외부 배포에 필요한 사용자 작업
-
-자동으로 대신할 수 없는 항목은 두 가지다.
-
-1. GitHub 저장소 URL 또는 GitHub 업로드 권한
-2. Render 계정에서 GitHub 저장소 연결 및 Blueprint 생성 승인
-
-이 두 연결이 완료되면 생성된 HTTPS URL에서 최종 시나리오를 검증하면 된다.
-
+- [MySQL 8.4 Reference Manual](https://dev.mysql.com/doc/refman/8.4/en/)

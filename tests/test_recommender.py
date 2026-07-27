@@ -95,6 +95,35 @@ class RecommenderTest(unittest.TestCase):
             result["recommendation_reason"].str.contains("최근 클릭").any()
         )
 
+    def test_negative_behavior_lowers_the_product_score(self) -> None:
+        baseline = recommend(
+            self.products,
+            self.model,
+            interests=["전자기기"],
+            favorite_ids=set(),
+            budget_min=0,
+            budget_max=250_000,
+            top_n=30,
+        ).set_index("id")
+        penalized = recommend(
+            self.products,
+            self.model,
+            interests=["전자기기"],
+            favorite_ids=set(),
+            budget_min=0,
+            budget_max=250_000,
+            top_n=30,
+            behavior_product_weights={"P001": -1.0},
+        ).set_index("id")
+        self.assertLess(
+            penalized.loc["P001", "recommendation_score"],
+            baseline.loc["P001", "recommendation_score"],
+        )
+        self.assertEqual(
+            penalized.loc["P001", "negative_behavior_score"],
+            0.2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
