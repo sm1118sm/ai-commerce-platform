@@ -75,6 +75,7 @@ st.markdown(
       }
       .product-emoji { font-size: 3.3rem; text-align: center; padding: .4rem; }
       .product-category { color: #6d5dfc; font-size: .82rem; font-weight: 700; }
+      .product-brand { color: #64748b; font-size: .75rem; font-weight: 700; letter-spacing:.04em; }
       .product-name { font-size: 1.08rem; font-weight: 750; margin: .35rem 0; }
       .product-description { color: #64748b; font-size: .88rem; min-height: 3.8rem; }
       .product-meta { display:flex; justify-content:space-between; margin-top:.8rem; }
@@ -345,7 +346,9 @@ def product_detail(product_id: str) -> None:
         unsafe_allow_html=True,
     )
     st.subheader(product["name"])
-    st.caption(f"{product['category']} · ⭐ {product['rating']}")
+    st.caption(
+        f"{product['brand']} · {product['category']} · ⭐ {product['rating']}"
+    )
     st.write(product["description"])
     st.metric("판매가", f"{int(product['price']):,}원")
     st.caption(f"현재 재고: {int(product['stock'])}개")
@@ -377,6 +380,7 @@ def product_card(product: pd.Series, key_prefix: str, reason: str | None = None)
         <div class="product-card">
           <div class="product-emoji">{product['emoji']}</div>
           <div class="product-category">{escape(str(product['category']))}</div>
+          <div class="product-brand">{escape(str(product['brand']))}</div>
           <div class="product-name">{escape(str(product['name']))}</div>
           <div class="product-description">{description}</div>
           <div class="product-meta">

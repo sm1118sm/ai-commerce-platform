@@ -2,16 +2,17 @@
 
 측정일: 2026-07-27
 
-평가 데이터는 `data/recommendation_benchmark.json`의 한국어 쇼핑 의도 12개와
-관련 상품 정답으로 구성했다. 두 모델 모두 같은 상품 30개에서 Top-5를
+평가 데이터 V2의 사람 승인 한국어 쇼핑 의도 12개와 관련 상품 정답으로
+구성했다. 별도로 210개 검수 전 초안이 있으며 승인되기 전에는 공식 지표에
+포함하지 않는다. 두 모델 모두 개편된 2030 타깃 상품 30개에서 Top-5를
 추천했다.
 
 | 모델 | Precision@5 | Recall@5 | NDCG@5 | MRR |
 |---|---:|---:|---:|---:|
-| TF-IDF | 0.067 | 0.292 | 0.259 | 0.278 |
-| multilingual-e5-small | **0.217** | **0.958** | **0.827** | **0.819** |
+| TF-IDF | 0.117 | 0.542 | 0.363 | 0.336 |
+| multilingual-e5-small | **0.217** | **0.958** | **0.857** | **0.833** |
 
-E5의 NDCG@5는 TF-IDF보다 `+0.568` 높았고 약 3.2배 수준이다. 의미가
+E5의 NDCG@5는 TF-IDF보다 `+0.494` 높았고 약 2.4배 수준이다. 의미가
 비슷하지만 단어가 정확히 겹치지 않는 한국어 문장에서도 관련 상품을 찾은
 것이 주요 개선 이유다.
 
@@ -22,5 +23,8 @@ E5의 NDCG@5는 TF-IDF보다 `+0.568` 높았고 약 3.2배 수준이다. 의미�
 재현 명령:
 
 ```bash
-python -m scripts.evaluate_recommender --backend both --top-k 5
+python -m scripts.benchmark_dataset validate
+python -m scripts.evaluate_recommender --backend both --dataset v2 --top-k 5
 ```
+
+검수 전 초안을 참고용으로 확인할 때만 `--include-draft`를 사용한다.
