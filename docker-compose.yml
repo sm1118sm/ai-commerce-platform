@@ -31,6 +31,7 @@ services:
       APP_ENV: development
       DATABASE_URL: mysql://${MYSQL_USER:-stylepick}:${MYSQL_PASSWORD:-stylepick_dev_password}@mysql:3306/${MYSQL_DATABASE:-stylepick}
       DEMO_MODE: "true"
+      RECOMMENDER_BACKEND: ${RECOMMENDER_BACKEND:-e5}
     ports:
       - "8501:8501"
     depends_on:
@@ -42,7 +43,7 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: mysql
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       mysql:
         condition: service_healthy

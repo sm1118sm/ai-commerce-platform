@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 
 from src.catalog import load_products
-from src.database import StoreDatabase, normalize_phone, parse_mysql_url
+from src.database import (
+    StoreDatabase,
+    normalize_phone,
+    parse_mysql_url,
+    validate_password,
+)
 
 
 TEST_DATABASE_URL = os.environ.get("STYLEPICK_TEST_DATABASE_URL", "")
@@ -51,6 +56,13 @@ class DatabaseHelpersTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "전화번호"):
             normalize_phone("1234")
 
+    def test_password_requires_uppercase_and_special_character(self) -> None:
+        validate_password("Valid-pass!")
+        with self.assertRaisesRegex(ValueError, "대문자"):
+            validate_password("lowercase!")
+        with self.assertRaisesRegex(ValueError, "특수문자"):
+            validate_password("NoSpecial123")
+
 
 @unittest.skipUnless(
     TEST_DATABASE_URL,
@@ -69,14 +81,14 @@ class DatabaseTest(unittest.TestCase):
         database.seed_products(self.products)
         user = database.register_user(
             "tester@example.com",
-            "secure-password",
+            "Secure-password!",
             "테스터",
             "010-1111-1111",
         )
         user_id = int(user["id"])
         authenticated = database.authenticate(
             "tester@example.com",
-            "secure-password",
+            "Secure-password!",
         )
         self.assertEqual(int(authenticated["id"]), user_id)
         database.save_profile(
@@ -109,10 +121,10 @@ class DatabaseTest(unittest.TestCase):
         database = self.database
         database.seed_products(self.products)
         first = database.register_user(
-            "one@example.com", "password-one", "첫째", "010-1111-1111"
+            "one@example.com", "Password-one!", "첫째", "010-1111-1111"
         )
         second = database.register_user(
-            "two@example.com", "password-two", "둘째", "010-2222-2222"
+            "two@example.com", "Password-two!", "둘째", "010-2222-2222"
         )
         database.toggle_favorite(int(first["id"]), "P001", "one-session")
         self.assertEqual(database.load_favorites(int(first["id"])), {"P001"})
@@ -120,17 +132,21 @@ class DatabaseTest(unittest.TestCase):
 
     def test_duplicate_email_and_nickname_are_rejected(self) -> None:
         database = self.database
+        self.assertTrue(database.email_is_available("member@example.com"))
+        self.assertTrue(database.nickname_is_available("UniqueName"))
         first = database.register_user(
             " Member@Example.com ",
-            "password-one",
+            "Password-one!",
             "UniqueName",
             "010-1111-1111",
         )
+        self.assertFalse(database.email_is_available(" MEMBER@example.com "))
+        self.assertFalse(database.nickname_is_available(" uniquename "))
 
         with self.assertRaisesRegex(ValueError, "이미 가입된 이메일"):
             database.register_user(
                 "member@example.com",
-                "password-two",
+                "Password-two!",
                 "AnotherName",
                 "010-2222-2222",
             )
@@ -138,7 +154,7 @@ class DatabaseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "이미 사용 중인 닉네임"):
             database.register_user(
                 "another@example.com",
-                "password-two",
+                "Password-two!",
                 " uniquename ",
                 "010-3333-3333",
             )
@@ -146,14 +162,14 @@ class DatabaseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "이미 가입된 전화번호"):
             database.register_user(
                 "phone-owner@example.com",
-                "password-two",
+                "Password-two!",
                 "PhoneOwner",
                 "+82 10-1111-1111",
             )
 
         authenticated = database.authenticate(
             "MEMBER@example.com",
-            "password-one",
+            "Password-one!",
         )
         self.assertEqual(int(authenticated["id"]), int(first["id"]))
         with database.connect() as connection:
@@ -166,13 +182,13 @@ class DatabaseTest(unittest.TestCase):
         database = self.database
         first = database.register_user(
             "one@example.com",
-            "password-one",
+            "Password-one!",
             "FirstName",
             "010-1111-1111",
         )
         second = database.register_user(
             "two@example.com",
-            "password-two",
+            "Password-two!",
             "SecondName",
             "010-2222-2222",
         )
@@ -199,7 +215,7 @@ class DatabaseTest(unittest.TestCase):
         database.seed_products(self.products)
         user = database.register_user(
             "delete@example.com",
-            "password-delete",
+            "Password-delete!",
             "DeleteMe",
             "010-3333-3333",
         )
@@ -210,7 +226,7 @@ class DatabaseTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "비밀번호"):
             database.delete_user(user_id, "wrong-password")
-        database.delete_user(user_id, "password-delete")
+        database.delete_user(user_id, "Password-delete!")
 
         with database.connect() as connection:
             user_count = connection.execute(

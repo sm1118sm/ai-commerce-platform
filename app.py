@@ -11,7 +11,12 @@ import pandas as pd
 import streamlit as st
 
 from src.catalog import load_products
-from src.database import StoreDatabase
+from src.database import (
+    PASSWORD_SPECIAL_CHARACTERS,
+    StoreDatabase,
+    normalize_email,
+    normalize_nickname,
+)
 from src.recommender import fit_recommender, recommend
 
 
@@ -36,6 +41,12 @@ st.markdown(
         background: #f7f8fc;
         color: #172033;
         color-scheme: light;
+      }
+      /* Keep the current screen crisp while Streamlit processes a widget rerun. */
+      [data-stale="true"] {
+        opacity: 1 !important;
+        filter: none !important;
+        transition: none !important;
       }
       [data-testid="stWidgetLabel"] p,
       [data-testid="stCaptionContainer"] p,
@@ -89,7 +100,28 @@ def get_products() -> pd.DataFrame:
 database = StoreDatabase(DATABASE_TARGET)
 database.seed_products(get_products())
 products = database.load_products()
-model = fit_recommender(products)
+RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
+
+
+@st.cache_resource
+def get_recommendation_model(
+    backend: str,
+    catalog_fingerprint: tuple,
+    _products: pd.DataFrame,
+):
+    return fit_recommender(_products, backend=backend)
+
+
+catalog_fingerprint = tuple(
+    products[["id", "name", "category", "description"]]
+    .astype(str)
+    .itertuples(index=False, name=None)
+)
+model = get_recommendation_model(
+    RECOMMENDER_BACKEND,
+    catalog_fingerprint,
+    products,
+)
 CATEGORIES = sorted(products["category"].unique().tolist())
 MAX_PRICE = int(products["price"].max())
 
@@ -147,65 +179,120 @@ def render_auth() -> None:
             st.rerun()
         st.caption("데모 계정은 로컬 시연용이며 실제 결제는 발생하지 않습니다.")
     with signup_tab:
-        with st.form("signup_form"):
-            signup_email = st.text_input(
-                "이메일",
-                key="signup_email",
-                max_chars=120,
-            )
-            signup_nickname = st.text_input(
-                "닉네임",
-                key="signup_nickname",
-                max_chars=30,
-            )
-            signup_phone = st.text_input(
-                "전화번호",
-                key="signup_phone",
-                placeholder="010-1234-5678",
-                max_chars=20,
-            )
-            signup_password = st.text_input(
-                "비밀번호",
-                type="password",
-                key="signup_password",
-                help="8자 이상 입력하세요.",
-            )
-            signup_confirm = st.text_input(
-                "비밀번호 확인",
-                type="password",
-                key="signup_confirm",
-            )
-            signup_submitted = st.form_submit_button(
-                "회원가입",
-                type="primary",
-                width="stretch",
-            )
-            if signup_submitted:
-                if signup_password != signup_confirm:
-                    st.error("비밀번호 확인이 일치하지 않습니다.")
+        signup_email = st.text_input(
+            "이메일",
+            key="signup_email",
+            max_chars=120,
+        )
+        if st.button(
+            "이메일 중복 확인",
+            key="check_signup_email",
+            width="stretch",
+        ):
+            try:
+                if database.email_is_available(signup_email):
+                    st.session_state.verified_signup_email = normalize_email(
+                        signup_email
+                    )
                 else:
-                    try:
-                        created_user = database.register_user(
-                            signup_email,
-                            signup_password,
-                            signup_nickname,
-                            signup_phone,
+                    st.session_state.verified_signup_email = None
+                    st.error("이미 가입된 이메일입니다.")
+            except ValueError as error:
+                st.session_state.verified_signup_email = None
+                st.error(str(error))
+        email_verified = (
+            bool(signup_email.strip())
+            and st.session_state.get("verified_signup_email")
+            == normalize_email(signup_email)
+        )
+        if email_verified:
+            st.success("사용 가능한 이메일입니다.")
+        else:
+            st.caption("이메일 중복 확인이 필요합니다.")
+
+        signup_nickname = st.text_input(
+            "닉네임",
+            key="signup_nickname",
+            max_chars=30,
+        )
+        if st.button(
+            "닉네임 중복 확인",
+            key="check_signup_nickname",
+            width="stretch",
+        ):
+            try:
+                if database.nickname_is_available(signup_nickname):
+                    st.session_state.verified_signup_nickname = (
+                        normalize_nickname(signup_nickname).casefold()
+                    )
+                else:
+                    st.session_state.verified_signup_nickname = None
+                    st.error("이미 사용 중인 닉네임입니다.")
+            except ValueError as error:
+                st.session_state.verified_signup_nickname = None
+                st.error(str(error))
+        nickname_verified = (
+            bool(signup_nickname.strip())
+            and st.session_state.get("verified_signup_nickname")
+            == normalize_nickname(signup_nickname).casefold()
+        )
+        if nickname_verified:
+            st.success("사용 가능한 닉네임입니다.")
+        else:
+            st.caption("닉네임 중복 확인이 필요합니다.")
+
+        signup_phone = st.text_input(
+            "전화번호",
+            key="signup_phone",
+            placeholder="010-1234-5678",
+            max_chars=20,
+        )
+        signup_password = st.text_input(
+            "비밀번호",
+            type="password",
+            key="signup_password",
+        )
+        st.caption(
+            "8자 이상 · 영문 대문자 1개 이상 · 특수문자 1개 이상"
+        )
+        st.caption(f"허용 특수문자: {PASSWORD_SPECIAL_CHARACTERS}")
+        signup_confirm = st.text_input(
+            "비밀번호 확인",
+            type="password",
+            key="signup_confirm",
+        )
+        signup_submitted = st.button(
+            "회원가입",
+            type="primary",
+            width="stretch",
+            disabled=not (email_verified and nickname_verified),
+        )
+        if signup_submitted:
+            if signup_password != signup_confirm:
+                st.error("비밀번호 확인이 일치하지 않습니다.")
+            else:
+                try:
+                    created_user = database.register_user(
+                        signup_email,
+                        signup_password,
+                        signup_nickname,
+                        signup_phone,
+                    )
+                    user = database.authenticate(
+                        signup_email,
+                        signup_password,
+                    )
+                    if int(user["id"]) != int(created_user["id"]):
+                        raise ValueError(
+                            "회원가입 정보 저장을 확인하지 못했습니다."
                         )
-                        user = database.authenticate(
-                            signup_email,
-                            signup_password,
-                        )
-                        if int(user["id"]) != int(created_user["id"]):
-                            raise ValueError(
-                                "회원가입 정보 저장을 확인하지 못했습니다."
-                            )
-                        login_user(user)
-                        st.session_state.auth_notice = (
-                            "회원가입 정보가 DB에 저장되고 로그인되었습니다."
-                        )
-                        st.rerun()
-                    except ValueError as error:
-                        st.error(str(error))
+                    login_user(user)
+                    st.session_state.auth_notice = (
+                        "회원가입 정보가 DB에 저장되고 로그인되었습니다."
+                    )
+                    st.rerun()
+                except ValueError as error:
+                    st.error(str(error))
 
 
 def initialize_state() -> None:
@@ -520,6 +607,11 @@ with shop_tab:
 
 with recommend_tab:
     st.subheader(f"{st.session_state.nickname}님을 위한 AI 추천")
+    recommendation_query = st.text_input(
+        "원하는 상품을 자연어로 입력하세요",
+        placeholder="예: 비 오는 날 가볍게 달릴 때 입을 옷",
+        key="recommendation_query",
+    )
     budget_min, budget_max = st.session_state.budget
     behavior_weights = database.user_behavior_weights(
         int(st.session_state.user_id)
@@ -539,9 +631,11 @@ with recommend_tab:
         behavior_product_weights=behavior_weights,
         trend_product_scores=trend_scores,
         purchased_ids=purchased_ids,
+        query_text=recommendation_query,
     )
     if (
-        not st.session_state.interests
+        not recommendation_query.strip()
+        and not st.session_state.interests
         and not st.session_state.favorites
         and not behavior_weights
     ):
@@ -555,15 +649,18 @@ with recommend_tab:
         )
     with st.expander("추천 점수는 어떻게 계산되나요?"):
         st.code(
-            "개인화 점수 = 콘텐츠 유사도×0.35 + 카테고리×0.20 "
-            "+ 최근 행동 유사도×0.20 + 예산×0.10 + 최근 트렌드×0.15"
+            "개인화 점수 = 콘텐츠 유사도×0.30 + 카테고리×0.20 "
+            "+ 최근 행동 유사도×0.20 + 예산×0.10 + 최근 트렌드×0.10 "
+            "+ 평점×0.10 - 부정 행동 패널티"
         )
         st.write(
             "TF-IDF가 상품명·카테고리·설명에서 중요한 단어를 학습하고, "
             "사용자 취향 및 최근 행동 벡터와 상품 벡터의 코사인 유사도를 계산합니다. "
-            "행동은 클릭 1, 찜 4, 장바구니 5, 구매 8점이며 최근 행동을 더 크게 반영합니다."
+            "행동은 클릭 1, 찜 4, 장바구니 5, 구매 8점이며 최근 행동을 더 크게 반영합니다. "
+            "찜·장바구니에서 제거한 상품은 추천 점수가 낮아집니다."
         )
         st.caption(
+            f"텍스트 모델 {RECOMMENDER_BACKEND.upper()} · "
             f"현재 반영된 행동 상품 {len(behavior_weights)}개 · "
             f"최근 7일 트렌드 상품 {len(trend_scores)}개 · "
             f"구매 완료 제외 상품 {len(purchased_ids)}개"

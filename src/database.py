@@ -29,6 +29,7 @@ ACTION_WEIGHTS = {
 VALID_ACTIONS = set(ACTION_WEIGHTS)
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_ITERATIONS = 240_000
+PASSWORD_SPECIAL_CHARACTERS = "!@#$%^&*()-_=+[]{};:,.?/"
 
 
 def normalize_email(email: str) -> str:
@@ -51,6 +52,15 @@ def normalize_phone(phone_number: str) -> str:
 
 def is_unique_violation(error: Exception) -> bool:
     return bool(getattr(error, "args", ())) and error.args[0] == 1062
+
+
+def validate_password(password: str) -> None:
+    if len(password) < 8:
+        raise ValueError("비밀번호는 8자 이상이어야 합니다.")
+    if not any(character.isascii() and character.isupper() for character in password):
+        raise ValueError("비밀번호에는 영문 대문자가 1개 이상 필요합니다.")
+    if not any(character in PASSWORD_SPECIAL_CHARACTERS for character in password):
+        raise ValueError("비밀번호에는 허용된 특수문자가 1개 이상 필요합니다.")
 
 
 def parse_mysql_url(database_url: str) -> dict:
@@ -249,8 +259,7 @@ class StoreDatabase:
         phone_number = normalize_phone(phone_number)
         if not EMAIL_PATTERN.match(email):
             raise ValueError("올바른 이메일 주소를 입력하세요.")
-        if len(password) < 8:
-            raise ValueError("비밀번호는 8자 이상이어야 합니다.")
+        validate_password(password)
         if not 1 <= len(nickname) <= 30:
             raise ValueError("닉네임은 1~30자로 입력하세요.")
         now = datetime.now().isoformat(timespec="seconds")
@@ -326,6 +335,34 @@ class StoreDatabase:
             ) from error
         return self.get_user(user_id)
 
+    def email_is_available(self, email: str) -> bool:
+        email = normalize_email(email)
+        if not EMAIL_PATTERN.match(email):
+            raise ValueError("올바른 이메일 주소를 입력하세요.")
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM users
+                WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+                """,
+                (email,),
+            ).fetchone()
+        return row is None
+
+    def nickname_is_available(self, nickname: str) -> bool:
+        nickname = normalize_nickname(nickname)
+        if not 1 <= len(nickname) <= 30:
+            raise ValueError("닉네임은 1~30자로 입력하세요.")
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM users
+                WHERE LOWER(TRIM(nickname)) = LOWER(TRIM(?))
+                """,
+                (nickname,),
+            ).fetchone()
+        return row is None
+
     def ensure_demo_user(self) -> dict:
         email = "demo@stylepick.local"
         with self.connect() as connection:
@@ -337,7 +374,7 @@ class StoreDatabase:
             return self.get_user(int(row["id"]))
         return self.register_user(
             email,
-            "stylepick-demo",
+            "Stylepick-demo!",
             "데모 사용자",
             "01000000000",
         )

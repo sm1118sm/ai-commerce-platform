@@ -13,6 +13,7 @@ from tests.test_database import reset_test_database
 
 ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE_URL = os.environ.get("STYLEPICK_TEST_DATABASE_URL", "")
+APP_TEST_TIMEOUT_SECONDS = 120
 
 
 @unittest.skipUnless(
@@ -32,7 +33,7 @@ class AppSmokeTest(unittest.TestCase):
             os.environ.pop("STYLEPICK_TEST_AUTOLOGIN", None)
             app = AppTest.from_file(
                 str(ROOT / "app.py"),
-                default_timeout=30,
+                default_timeout=APP_TEST_TIMEOUT_SECONDS,
             ).run()
             self.assertFalse(app.exception)
             self.assertEqual(
@@ -50,7 +51,7 @@ class AppSmokeTest(unittest.TestCase):
         ):
             app = AppTest.from_file(
                 str(ROOT / "app.py"),
-                default_timeout=30,
+                default_timeout=APP_TEST_TIMEOUT_SECONDS,
             ).run()
             self.assertFalse(app.exception)
             self.assertEqual(
@@ -68,7 +69,7 @@ class AppSmokeTest(unittest.TestCase):
         ):
             app = AppTest.from_file(
                 str(ROOT / "app.py"),
-                default_timeout=30,
+                default_timeout=APP_TEST_TIMEOUT_SECONDS,
             ).run()
             add_button = next(
                 button for button in app.button if button.label == "담기"

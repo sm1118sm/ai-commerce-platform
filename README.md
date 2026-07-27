@@ -31,7 +31,7 @@ docker compose up --build
 
 ### MySQL 회원 데이터 확인
 
-Docker Compose 실행 후 `http://localhost:8080`에서 Adminer를 엽니다.
+Docker Compose 실행 후 `http://localhost:8081`에서 Adminer를 엽니다.
 
 - 시스템: `MySQL`
 - 서버: `mysql`
