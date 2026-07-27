@@ -41,6 +41,60 @@ class AppSmokeTest(unittest.TestCase):
                 ["로그인", "회원가입"],
             )
 
+    def test_signup_availability_buttons_update_state(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": TEST_DATABASE_URL,
+                "RECOMMENDER_BACKEND": "tfidf",
+            },
+            clear=False,
+        ):
+            os.environ.pop("STYLEPICK_TEST_AUTOLOGIN", None)
+            app = AppTest.from_file(
+                str(ROOT / "app.py"),
+                default_timeout=APP_TEST_TIMEOUT_SECONDS,
+            ).run()
+            signup_email = next(
+                field for field in app.text_input
+                if field.key == "signup_email"
+            )
+            check_email = next(
+                button for button in app.button
+                if button.key == "check_signup_email"
+            )
+            signup_email.input("available@example.com")
+            check_email.click().run()
+            self.assertFalse(app.exception)
+            self.assertEqual(
+                app.session_state["verified_signup_email"],
+                "available@example.com",
+            )
+            self.assertIn(
+                "사용 가능한 이메일입니다.",
+                [message.value for message in app.success],
+            )
+
+            signup_nickname = next(
+                field for field in app.text_input
+                if field.key == "signup_nickname"
+            )
+            check_nickname = next(
+                button for button in app.button
+                if button.key == "check_signup_nickname"
+            )
+            signup_nickname.input("사용가능닉네임")
+            check_nickname.click().run()
+            self.assertFalse(app.exception)
+            self.assertEqual(
+                app.session_state["verified_signup_nickname"],
+                "사용가능닉네임",
+            )
+            self.assertIn(
+                "사용 가능한 닉네임입니다.",
+                [message.value for message in app.success],
+            )
+
     def test_main_screens_render(self) -> None:
         with patch.dict(
             os.environ,
