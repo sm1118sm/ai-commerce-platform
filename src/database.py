@@ -1,4 +1,4 @@
-"""MySQL backend for users, catalog, behavior, carts, and demo orders."""
+"""MySQL/PostgreSQL backend for users, catalog, behavior, carts, and orders."""
 
 from __future__ import annotations
 
@@ -51,7 +51,12 @@ def normalize_phone(phone_number: str) -> str:
 
 
 def is_unique_violation(error: Exception) -> bool:
-    return bool(getattr(error, "args", ())) and error.args[0] == 1062
+    mysql_duplicate = (
+        bool(getattr(error, "args", ()))
+        and error.args[0] == 1062
+    )
+    postgres_duplicate = getattr(error, "sqlstate", None) == "23505"
+    return mysql_duplicate or postgres_duplicate
 
 
 def validate_password(password: str) -> None:
@@ -91,6 +96,35 @@ def parse_mysql_url(database_url: str) -> dict:
     elif options.get("ssl", [""])[-1].lower() in {"1", "true", "required"}:
         connect_args["ssl"] = {}
     return connect_args
+
+
+def parse_postgres_url(database_url: str) -> dict:
+    """Validate a PostgreSQL URL and expose its database name for safety checks."""
+    parsed = urlparse(database_url)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise ValueError(
+            "DATABASE_URL은 postgres:// 또는 postgresql:// 형식이어야 합니다."
+        )
+    if not parsed.hostname or not parsed.path.lstrip("/"):
+        raise ValueError(
+            "DATABASE_URL에 PostgreSQL 호스트와 데이터베이스명이 필요합니다."
+        )
+    return {
+        "database": unquote(parsed.path.lstrip("/")),
+        "connect_timeout": 10,
+    }
+
+
+def database_kind(database_url: str) -> str:
+    scheme = urlparse(database_url).scheme.lower()
+    if scheme in {"mysql", "mysql+pymysql"}:
+        return "mysql"
+    if scheme in {"postgres", "postgresql"}:
+        return "postgresql"
+    raise ValueError(
+        "DATABASE_URL은 mysql://, mysql+pymysql://, postgres:// 또는 "
+        "postgresql:// 형식이어야 합니다."
+    )
 
 
 class _ConnectionAdapter:
@@ -165,22 +199,42 @@ def recency_weight(created_at: str, now: datetime | None = None) -> float:
 class StoreDatabase:
     def __init__(self, target: str | Path) -> None:
         self.database_url = str(target)
-        self.connection_args = parse_mysql_url(self.database_url)
+        self.kind = database_kind(self.database_url)
+        self.connection_args = (
+            parse_mysql_url(self.database_url)
+            if self.kind == "mysql"
+            else parse_postgres_url(self.database_url)
+        )
         self.initialize()
 
     @contextmanager
     def connect(self):
-        try:
-            import pymysql
-            from pymysql.cursors import DictCursor
-        except ImportError as error:
-            raise RuntimeError(
-                "MySQL 사용 시 `pip install PyMySQL`이 필요합니다."
-            ) from error
-        raw_connection = pymysql.connect(
-            **self.connection_args,
-            cursorclass=DictCursor,
-        )
+        if self.kind == "mysql":
+            try:
+                import pymysql
+                from pymysql.cursors import DictCursor
+            except ImportError as error:
+                raise RuntimeError(
+                    "MySQL 사용 시 `pip install PyMySQL`이 필요합니다."
+                ) from error
+            raw_connection = pymysql.connect(
+                **self.connection_args,
+                cursorclass=DictCursor,
+            )
+        else:
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+            except ImportError as error:
+                raise RuntimeError(
+                    "PostgreSQL 사용 시 `pip install psycopg[binary]`가 필요합니다."
+                ) from error
+            raw_connection = psycopg.connect(
+                self.database_url,
+                connect_timeout=self.connection_args["connect_timeout"],
+                row_factory=dict_row,
+                autocommit=False,
+            )
         connection = _ConnectionAdapter(raw_connection)
         try:
             yield connection
@@ -192,33 +246,57 @@ class StoreDatabase:
             connection.close()
 
     def initialize(self) -> None:
-        """Create MySQL tables without deleting existing data."""
-        schema_path = Path(__file__).resolve().parents[1] / "database" / "mysql_schema.sql"
+        """Create tables for the selected database without deleting data."""
+        schema_name = (
+            "mysql_schema.sql"
+            if self.kind == "mysql"
+            else "postgres_schema.sql"
+        )
+        schema_path = Path(__file__).resolve().parents[1] / "database" / schema_name
         schema = schema_path.read_text(encoding="utf-8")
         with self.connect() as connection:
             connection.executescript(schema)
 
     def seed_products(self, frame: pd.DataFrame) -> None:
         """Upsert catalog text while preserving stock changed by orders."""
+        if self.kind == "mysql":
+            upsert_sql = """
+                INSERT INTO products (
+                    product_id, name, category, description, price,
+                    popularity, rating, emoji, stock, tags, brand
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    category = VALUES(category),
+                    description = VALUES(description),
+                    price = VALUES(price),
+                    popularity = VALUES(popularity),
+                    rating = VALUES(rating),
+                    emoji = VALUES(emoji),
+                    tags = VALUES(tags),
+                    brand = VALUES(brand)
+            """
+        else:
+            upsert_sql = """
+                INSERT INTO products (
+                    product_id, name, category, description, price,
+                    popularity, rating, emoji, stock, tags, brand
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (product_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    category = EXCLUDED.category,
+                    description = EXCLUDED.description,
+                    price = EXCLUDED.price,
+                    popularity = EXCLUDED.popularity,
+                    rating = EXCLUDED.rating,
+                    emoji = EXCLUDED.emoji,
+                    tags = EXCLUDED.tags,
+                    brand = EXCLUDED.brand
+            """
         with self.connect() as connection:
             for product in frame.to_dict("records"):
                 connection.execute(
-                    """
-                    INSERT INTO products (
-                        product_id, name, category, description, price,
-                        popularity, rating, emoji, stock, tags, brand
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                        name = VALUES(name),
-                        category = VALUES(category),
-                        description = VALUES(description),
-                        price = VALUES(price),
-                        popularity = VALUES(popularity),
-                        rating = VALUES(rating),
-                        emoji = VALUES(emoji),
-                        tags = VALUES(tags),
-                        brand = VALUES(brand)
-                    """,
+                    upsert_sql,
                     (
                         str(product["id"]),
                         str(product["name"]),
@@ -299,6 +377,8 @@ class StoreDatabase:
                         role, status, created_at
                     ) VALUES (?, ?, ?, ?, 'USER', 'ACTIVE', ?)
                 """
+                if self.kind == "postgresql":
+                    insert_sql += " RETURNING id"
                 cursor = connection.execute(
                     insert_sql,
                     (
@@ -309,7 +389,11 @@ class StoreDatabase:
                         now,
                     ),
                 )
-                user_id = int(cursor.lastrowid)
+                user_id = (
+                    int(cursor.lastrowid)
+                    if self.kind == "mysql"
+                    else int(cursor.fetchone()["id"])
+                )
                 connection.execute(
                     """
                     INSERT INTO user_preferences(
@@ -440,9 +524,12 @@ class StoreDatabase:
             ).fetchone()
         if row is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
+        interests_value = row["interests_json"] or []
+        if isinstance(interests_value, str):
+            interests_value = json.loads(interests_value)
         return {
             "nickname": row["nickname"],
-            "interests": json.loads(row["interests_json"] or "[]"),
+            "interests": list(interests_value),
             "budget": (
                 int(row["budget_min"] or 0),
                 int(row["budget_max"] or 250_000),
@@ -462,6 +549,28 @@ class StoreDatabase:
         if int(budget[0]) > int(budget[1]):
             raise ValueError("최소 가격은 최대 가격보다 클 수 없습니다.")
         now = datetime.now().isoformat(timespec="seconds")
+        if self.kind == "mysql":
+            preferences_sql = """
+                INSERT INTO user_preferences(
+                    user_id, interests_json, budget_min, budget_max, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    interests_json = VALUES(interests_json),
+                    budget_min = VALUES(budget_min),
+                    budget_max = VALUES(budget_max),
+                    updated_at = VALUES(updated_at)
+            """
+        else:
+            preferences_sql = """
+                INSERT INTO user_preferences(
+                    user_id, interests_json, budget_min, budget_max, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    interests_json = EXCLUDED.interests_json,
+                    budget_min = EXCLUDED.budget_min,
+                    budget_max = EXCLUDED.budget_max,
+                    updated_at = EXCLUDED.updated_at
+            """
         try:
             with self.connect() as connection:
                 duplicate_nickname = connection.execute(
@@ -479,16 +588,7 @@ class StoreDatabase:
                     (nickname, int(user_id)),
                 )
                 connection.execute(
-                    """
-                    INSERT INTO user_preferences(
-                        user_id, interests_json, budget_min, budget_max, updated_at
-                    ) VALUES (?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                        interests_json = VALUES(interests_json),
-                        budget_min = VALUES(budget_min),
-                        budget_max = VALUES(budget_max),
-                        updated_at = VALUES(updated_at)
-                    """,
+                    preferences_sql,
                     (
                         int(user_id),
                         json.dumps(interests, ensure_ascii=False),
@@ -597,6 +697,22 @@ class StoreDatabase:
         quantity = int(quantity)
         if not 1 <= quantity <= 10:
             raise ValueError("수량은 1~10개만 선택할 수 있습니다.")
+        if self.kind == "mysql":
+            cart_sql = """
+                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    quantity = VALUES(quantity),
+                    updated_at = VALUES(updated_at)
+            """
+        else:
+            cart_sql = """
+                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (user_id, product_id) DO UPDATE SET
+                    quantity = EXCLUDED.quantity,
+                    updated_at = EXCLUDED.updated_at
+            """
         with self.connect() as connection:
             product = connection.execute(
                 "SELECT stock FROM products WHERE product_id = ?",
@@ -607,13 +723,7 @@ class StoreDatabase:
             if quantity > int(product["stock"]):
                 raise ValueError(f"재고는 최대 {int(product['stock'])}개입니다.")
             connection.execute(
-                """
-                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    quantity = VALUES(quantity),
-                    updated_at = VALUES(updated_at)
-                """,
+                cart_sql,
                 (
                     int(user_id),
                     product_id,

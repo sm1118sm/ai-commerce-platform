@@ -18,7 +18,7 @@ APP_TEST_TIMEOUT_SECONDS = 120
 
 @unittest.skipUnless(
     TEST_DATABASE_URL,
-    "STYLEPICK_TEST_DATABASE_URL이 없어 MySQL 앱 테스트를 건너뜁니다.",
+    "STYLEPICK_TEST_DATABASE_URL이 없어 DB 앱 테스트를 건너뜁니다.",
 )
 class AppSmokeTest(unittest.TestCase):
     def setUp(self) -> None:
