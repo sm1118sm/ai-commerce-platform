@@ -51,6 +51,9 @@ mysql://사용자명:비밀번호@호스트:3306/데이터베이스명?ssl=true
 4. `DATABASE_URL` Secret에 운영 MySQL 접속 주소를 입력한다.
 5. 배포 로그와 `/_stcore/health` 응답을 확인한다.
 
+`render.yaml`의 `autoDeployTrigger: commit` 설정으로 GitHub `main`에 새
+커밋이 병합될 때마다 Streamlit Docker 서비스가 자동으로 다시 배포된다.
+
 Render는 관리형 MySQL을 직접 생성하지 않으므로 외부 MySQL을 먼저 준비해야
 한다. `DATABASE_URL`을 YAML이나 GitHub에 직접 넣지 않는다.
 

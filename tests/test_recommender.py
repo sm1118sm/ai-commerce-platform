@@ -19,6 +19,16 @@ class RecommenderTest(unittest.TestCase):
     def test_catalog_has_30_unique_products(self) -> None:
         self.assertEqual(len(self.products), 30)
         self.assertEqual(self.products["id"].nunique(), 30)
+        self.assertEqual(self.products["name"].nunique(), 30)
+
+    def test_catalog_has_ecommerce_metadata(self) -> None:
+        for column in ["name", "description", "tags", "brand"]:
+            self.assertFalse(
+                self.products[column].astype(str).str.strip().eq("").any()
+            )
+        self.assertTrue((self.products["price"] > 0).all())
+        self.assertTrue((self.products["stock"] >= 0).all())
+        self.assertTrue(self.products["rating"].between(0, 5).all())
 
     def test_cold_start_returns_budget_fit_products(self) -> None:
         result = recommend(
