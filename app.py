@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from html import escape
-import json
 import logging
 import os
 from pathlib import Path
@@ -14,6 +13,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import streamlit as st
+from streamlit_cookies_controller import CookieController
 
 from src.auth_session import create_session_token, verify_session_token
 from src.database import (
@@ -36,8 +36,6 @@ if not DATABASE_TARGET:
         "DATABASE_URL이 필요합니다. .env.example 또는 docker-compose.yml을 참고하세요."
     )
 AUTH_COOKIE_NAME = "stylepick_session"
-AUTH_QUERY_PARAM = "sp_session"
-AUTH_STORAGE_NAME = "stylepick_session"
 AUTH_SESSION_TTL_SECONDS = 2 * 60 * 60
 AUTH_SESSION_SECRET = (
     os.environ.get("SESSION_SECRET") or DATABASE_TARGET
@@ -89,6 +87,12 @@ st.markdown(
         background: #ffffff !important;
         color: var(--sp-ink) !important;
         -webkit-text-fill-color: var(--sp-ink) !important;
+      }
+      iframe[title="streamlit_cookies_controller.cookie_controller.cookie_controller"],
+      div[data-testid="stElementContainer"]:has(
+        iframe[title="streamlit_cookies_controller.cookie_controller.cookie_controller"]
+      ) {
+        display: none !important;
       }
       .block-container {
         max-width: 1280px;
@@ -442,6 +446,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+class TestCookieController:
+    """No-browser adapter for Streamlit AppTest integration runs."""
+
+    def get(self, _name: str):
+        return None
+
+    def set(self, _name: str, _value: str, **_options) -> None:
+        return None
+
+    def remove(self, _name: str, **_options) -> None:
+        return None
+
+
+if os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") == "1":
+    auth_cookie_controller = TestCookieController()
+else:
+    auth_cookie_controller = CookieController(key="stylepick_auth_cookies")
+
 # Keep authentication in one stable delta slot. On a successful login the same
 # slot is emptied before any database/model wait, so the browser cannot retain
 # auth elements underneath the storefront while Streamlit reconciles the page.
@@ -646,66 +668,33 @@ def queue_auth_cookie(
 
 
 def render_auth_cookie_action() -> None:
-    """Sync signed auth state with cookie and browser storage."""
+    """Apply a queued signed login cookie through a Streamlit component."""
     queued = st.session_state.pop("auth_cookie_action", None)
-    action, token, expires_at = queued or ("", "", 0)
+    if not queued:
+        return
+    action, token, expires_at = queued
     is_production = (
         os.environ.get("APP_ENV", "development").lower() == "production"
     )
-    secure = "; Secure" if is_production else ""
     if action == "set":
         max_age = max(1, int(expires_at) - int(time.time()))
-        cookie = (
-            f"{AUTH_COOKIE_NAME}={token}; Path=/; Max-Age={max_age}; "
-            f"SameSite=Lax{secure}"
+        auth_cookie_controller.set(
+            AUTH_COOKIE_NAME,
+            token,
+            path="/",
+            max_age=max_age,
+            secure=is_production,
+            same_site="lax",
         )
     elif action == "clear":
-        cookie = (
-            f"{AUTH_COOKIE_NAME}=; Path=/; Max-Age=0; "
-            f"SameSite=Lax{secure}"
+        auth_cookie_controller.set(
+            AUTH_COOKIE_NAME,
+            "",
+            path="/",
+            max_age=0,
+            secure=is_production,
+            same_site="lax",
         )
-    else:
-        cookie = ""
-    action_literal = json.dumps(action)
-    cookie_literal = json.dumps(cookie)
-    token_literal = json.dumps(token)
-    storage_name_literal = json.dumps(AUTH_STORAGE_NAME)
-    query_name_literal = json.dumps(AUTH_QUERY_PARAM)
-    allow_restore = bool(
-        not st.session_state.user_id
-        and not st.session_state.get("auth_cookie_restore_blocked")
-        and not st.query_params.get(AUTH_QUERY_PARAM)
-    )
-    allow_restore_literal = "true" if allow_restore else "false"
-    st.iframe(
-        f"""
-        <script>
-        (() => {{
-          const parentWindow = window.parent;
-          const action = {action_literal};
-          const storageName = {storage_name_literal};
-          const token = {token_literal};
-          if (action === "set") {{
-            parentWindow.localStorage.setItem(storageName, token);
-            parentWindow.document.cookie = {cookie_literal};
-          }} else if (action === "clear") {{
-            parentWindow.localStorage.removeItem(storageName);
-            parentWindow.document.cookie = {cookie_literal};
-          }} else if ({allow_restore_literal}) {{
-            const savedToken = parentWindow.localStorage.getItem(storageName);
-            if (savedToken) {{
-              const url = new URL(parentWindow.location.href);
-              url.searchParams.set({query_name_literal}, savedToken);
-              parentWindow.location.replace(url.toString());
-            }}
-          }}
-        }})();
-        </script>
-        """,
-        height=1,
-        width=1,
-        tab_index=-1,
-    )
 
 
 def remember_user_session(user_id: int) -> int:
@@ -735,15 +724,15 @@ def initialize_auth() -> None:
         not st.session_state.user_id
         and not st.session_state.get("auth_cookie_restore_blocked")
     ):
-        query_token = st.query_params.get(AUTH_QUERY_PARAM)
-        raw_token = query_token or st.context.cookies.get(AUTH_COOKIE_NAME)
+        raw_token = (
+            auth_cookie_controller.get(AUTH_COOKIE_NAME)
+            or st.context.cookies.get(AUTH_COOKIE_NAME)
+        )
         if raw_token:
             claims = verify_session_token(
                 raw_token,
                 AUTH_SESSION_SECRET,
             )
-            if query_token:
-                st.query_params.pop(AUTH_QUERY_PARAM, None)
             if claims is None:
                 queue_auth_cookie("clear")
                 st.session_state.auth_cookie_restore_blocked = True
