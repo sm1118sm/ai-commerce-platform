@@ -295,6 +295,11 @@ def recommend(
     ranked = ranked[~ranked["id"].isin(excluded)]
     if "stock" in ranked:
         ranked = ranked[ranked["stock"] > 0]
+    if interests:
+        # A saved interest category is an explicit recommendation constraint,
+        # not merely a weak ranking hint. CNN ranking still decides the order
+        # within the categories selected by the member.
+        ranked = ranked[ranked["category"].isin(interests)]
     candidate_size = min(len(ranked), max(top_n, 20))
     ranked = ranked.sort_values(
         ["retrieval_score", "popularity"],
@@ -307,9 +312,15 @@ def recommend(
 
     selected_indices: list[int] = []
     category_counts: dict[str, int] = {}
+    max_per_category = 4
+    if interests:
+        max_per_category = max(
+            4,
+            (top_n + len(interests) - 1) // len(interests),
+        )
     for index, row in ranked.iterrows():
         category = str(row["category"])
-        if category_counts.get(category, 0) >= 4:
+        if category_counts.get(category, 0) >= max_per_category:
             continue
         selected_indices.append(index)
         category_counts[category] = category_counts.get(category, 0) + 1

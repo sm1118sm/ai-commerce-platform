@@ -2593,6 +2593,12 @@ with recommend_tab:
             "아직 취향 정보가 없어 예산 범위와 인기도를 이용한 콜드 스타트 추천입니다. "
             "관심 카테고리를 저장하거나 상품을 찜하면 개인화됩니다."
         )
+    elif st.session_state.interests:
+        selected_interest_labels = ", ".join(st.session_state.interests)
+        st.success(
+            f"선택한 관심 카테고리({selected_interest_labels}) 안에서 "
+            "CNN이 개인별 추천 순서를 계산했습니다."
+        )
     else:
         st.success(
             "관심사와 최근 클릭·찜·장바구니·구매 행동을 반영한 회원별 추천입니다."

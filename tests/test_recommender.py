@@ -58,7 +58,7 @@ class RecommenderTest(unittest.TestCase):
             top_n=6,
         )
         electronics = int((result["category"] == "전자기기").sum())
-        self.assertGreaterEqual(electronics, 4)
+        self.assertEqual(electronics, len(result))
         self.assertTrue(
             result["recommendation_reason"].str.contains("관심 카테고리").any()
         )
@@ -208,7 +208,9 @@ class RecommenderTest(unittest.TestCase):
             top_n=8,
             behavior_product_weights={"P002": 4.0},
         )
-        self.assertEqual(len(result), 8)
+        self.assertGreater(len(result), 0)
+        self.assertLessEqual(len(result), 8)
+        self.assertTrue((result["category"] == "전자기기").all())
         self.assertNotIn("P001", result["id"].tolist())
 
     def test_cnn_encodes_only_an_arbitrary_search_query(self) -> None:
