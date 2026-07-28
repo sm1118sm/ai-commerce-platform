@@ -2,10 +2,28 @@ from __future__ import annotations
 
 import unittest
 
-from src.auth_session import create_session_token, verify_session_token
+from src.auth_session import (
+    create_session_token,
+    should_probe_browser_cookie,
+    verify_session_token,
+)
 
 
 class AuthSessionTest(unittest.TestCase):
+    def test_cookie_probe_runs_once_before_auth_form(self) -> None:
+        self.assertTrue(
+            should_probe_browser_cookie(True, False, False)
+        )
+        self.assertFalse(
+            should_probe_browser_cookie(True, True, False)
+        )
+        self.assertFalse(
+            should_probe_browser_cookie(True, False, True)
+        )
+        self.assertFalse(
+            should_probe_browser_cookie(False, False, False)
+        )
+
     def test_token_keeps_user_signed_in_for_two_hours(self) -> None:
         token, claims = create_session_token(42, "test-secret", now=1_000)
 

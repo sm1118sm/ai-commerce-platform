@@ -15,7 +15,11 @@ from uuid import uuid4
 import streamlit as st
 from streamlit_cookies_controller import CookieController
 
-from src.auth_session import create_session_token, verify_session_token
+from src.auth_session import (
+    create_session_token,
+    should_probe_browser_cookie,
+    verify_session_token,
+)
 from src.database import (
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
@@ -1093,42 +1097,32 @@ def enable_live_phone_format() -> None:
     )
 
 
-def render_auth(*, defer_reveal: bool = False) -> None:
-    if defer_reveal:
-        st.markdown(
-            """
-            <style>
-              @keyframes sp-auth-form-reveal {
-                to { opacity: 1; visibility: visible; }
-              }
-              @keyframes sp-auth-probe-hide {
-                to { opacity: 0; visibility: hidden; }
-              }
-              div[data-testid="stMainBlockContainer"]:has(.auth-probe-card)
-              div[data-testid="stHorizontalBlock"]:has(.auth-hero) {
-                opacity: 0;
-                visibility: hidden;
-                animation: sp-auth-form-reveal .12s ease-out 1.15s forwards;
-              }
-              .auth-probe-card {
-                max-width: 420px;
-                margin: 18vh auto 0;
-                padding: 1rem 1.2rem;
-                text-align: center;
-                color: #64748b;
-                background: rgba(255,255,255,.9);
-                border: 1px solid #e5e7eb;
-                border-radius: 18px;
-                box-shadow: 0 14px 40px rgba(15,23,42,.07);
-                animation: sp-auth-probe-hide .12s ease-out 1.1s forwards;
-              }
-            </style>
-            <div class="auth-probe-card">
-              로그인 상태를 확인하고 있어요.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+def render_auth_probe() -> None:
+    """Render no auth controls while the browser cookie component starts."""
+    st.markdown(
+        """
+        <style>
+          .auth-probe-card {
+            max-width: 420px;
+            margin: 18vh auto 0;
+            padding: 1rem 1.2rem;
+            text-align: center;
+            color: #64748b;
+            background: rgba(255,255,255,.9);
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            box-shadow: 0 14px 40px rgba(15,23,42,.07);
+          }
+        </style>
+        <div class="auth-probe-card">
+          로그인 상태를 확인하고 있어요.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_auth() -> None:
     intro_col, form_col = st.columns([1.08, .92], gap="large")
     with intro_col:
         st.markdown(
@@ -1614,13 +1608,17 @@ if (
         st.button("다시 연결", type="primary", width="stretch")
     st.stop()
 if not st.session_state.user_id:
-    defer_auth_reveal = bool(
-        AUTH_COOKIE_COMPONENT_ENABLED
-        and not st.session_state.get("auth_cookie_probe_started")
+    should_probe_cookie = should_probe_browser_cookie(
+        AUTH_COOKIE_COMPONENT_ENABLED,
+        bool(st.session_state.get("auth_cookie_probe_started")),
+        bool(st.session_state.get("auth_cookie_restore_blocked")),
     )
-    st.session_state.auth_cookie_probe_started = True
     with auth_page_slot.container():
-        render_auth(defer_reveal=defer_auth_reveal)
+        if should_probe_cookie:
+            st.session_state.auth_cookie_probe_started = True
+            render_auth_probe()
+        else:
+            render_auth()
     st.stop()
 auth_page_slot.markdown(
     """

@@ -17,6 +17,19 @@ class SessionClaims:
     expires_at: int
 
 
+def should_probe_browser_cookie(
+    component_enabled: bool,
+    probe_started: bool,
+    restore_blocked: bool,
+) -> bool:
+    """Wait once for browser cookies unless absence/expiry is already known."""
+    return bool(
+        component_enabled
+        and not probe_started
+        and not restore_blocked
+    )
+
+
 def _encode(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
