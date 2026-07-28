@@ -90,7 +90,7 @@ st.markdown(
       }
       .block-container {
         max-width: 1280px;
-        padding-top: 1.25rem;
+        padding-top: 5rem;
         padding-bottom: 6rem;
       }
       .block-container:has(.detail-page-marker) {
@@ -368,7 +368,7 @@ st.markdown(
 
       @media (max-width: 640px) {
         .block-container {
-          padding: .7rem .8rem 7.4rem;
+          padding: 4.75rem .8rem 7.4rem;
         }
         .block-container:has(.detail-page-marker) {
           padding-top: 4.75rem;
