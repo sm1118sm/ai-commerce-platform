@@ -225,6 +225,49 @@ class AppSmokeTest(unittest.TestCase):
             self.assertIsNotNone(app.session_state["last_order"])
             self.assertEqual(app.session_state["cart"], {})
 
+    def test_product_detail_back_preserves_login(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": TEST_DATABASE_URL,
+                "RECOMMENDER_BACKEND": "tfidf",
+                "STYLEPICK_TEST_AUTOLOGIN": "1",
+                "STYLEPICK_TEST_SYNC_STARTUP": "1",
+            },
+            clear=False,
+        ):
+            app = AppTest.from_file(
+                str(ROOT / "app.py"),
+                default_timeout=APP_TEST_TIMEOUT_SECONDS,
+            ).run()
+            original_user_id = app.session_state["user_id"]
+            next(
+                button for button in app.button
+                if button.label == "상세"
+            ).click().run()
+            self.assertFalse(app.exception)
+            self.assertIsNotNone(
+                app.session_state["selected_product_id"]
+            )
+
+            next(
+                button for button in app.button
+                if button.key == "detail_back"
+            ).click().run()
+
+            self.assertFalse(app.exception)
+            self.assertEqual(
+                app.session_state["user_id"],
+                original_user_id,
+            )
+            self.assertIsNone(
+                app.session_state["selected_product_id"]
+            )
+            self.assertEqual(
+                [tab.label for tab in app.tabs],
+                ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

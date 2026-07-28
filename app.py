@@ -622,15 +622,16 @@ def initialize_auth() -> None:
 
 
 def login_user(user: dict) -> None:
-    st.session_state.user_id = int(user["id"])
+    user_id = int(user["id"])
+    # Finish the small, single-query storefront snapshot before replacing the
+    # authentication page. This produces one atomic screen transition instead
+    # of briefly mixing old auth elements with an incomplete storefront.
+    storefront_snapshot = database.load_storefront_snapshot(user_id)
+    st.session_state.user_id = user_id
     st.session_state.current_user = user
     st.session_state.loaded_user_id = None
     st.session_state.last_order = None
-    st.session_state.storefront_snapshot_future = start_daemon_future(
-        database.load_storefront_snapshot,
-        int(user["id"]),
-        thread_name=f"stylepick-storefront-{int(user['id'])}",
-    )
+    st.session_state.storefront_snapshot_ready = storefront_snapshot
 
 
 def submit_login() -> None:
@@ -992,52 +993,6 @@ def initialize_state(snapshot: dict) -> None:
     st.session_state.loaded_user_id = user_id
 
 
-def empty_storefront_snapshot(user: dict, max_price: int) -> dict:
-    """Render the storefront immediately while remote user state finishes loading."""
-    return {
-        "profile": {
-            "nickname": user["nickname"],
-            "interests": [],
-            "budget": (0, max_price),
-        },
-        "favorites": set(),
-        "cart": {},
-        "behavior_summary": {},
-        "behavior_weights": {},
-        "trend_scores": {},
-        "purchased_ids": set(),
-        "order_history": [],
-    }
-
-
-@st.fragment(run_every=0.25)
-def refresh_storefront_snapshot() -> None:
-    future = st.session_state.get("storefront_snapshot_future")
-    if future is not None and future.done():
-        st.session_state.storefront_snapshot_ready = future.result()
-        st.session_state.pop("storefront_snapshot_future", None)
-        st.session_state.loaded_user_id = None
-        st.rerun()
-
-
-def initial_storefront_snapshot(user: dict, max_price: int) -> dict:
-    ready_snapshot = st.session_state.pop("storefront_snapshot_ready", None)
-    if ready_snapshot is not None:
-        return ready_snapshot
-    future = st.session_state.get("storefront_snapshot_future")
-    if future is None:
-        return get_storefront_snapshot(
-            DATABASE_TARGET,
-            int(st.session_state.user_id),
-            database,
-        )
-    if future.done():
-        st.session_state.pop("storefront_snapshot_future", None)
-        return future.result()
-    refresh_storefront_snapshot()
-    return empty_storefront_snapshot(user, max_price)
-
-
 def toggle_favorite(product_id: str) -> None:
     added = database.toggle_favorite(
         int(st.session_state.user_id),
@@ -1347,10 +1302,13 @@ products = get_database_products(DATABASE_TARGET, database)
 CATEGORIES = sorted(products["category"].unique().tolist())
 MAX_PRICE = int(products["price"].max())
 model = model_future.result()
-storefront_snapshot = initial_storefront_snapshot(
-    st.session_state.current_user,
-    MAX_PRICE,
-)
+storefront_snapshot = st.session_state.pop("storefront_snapshot_ready", None)
+if storefront_snapshot is None:
+    storefront_snapshot = get_storefront_snapshot(
+        DATABASE_TARGET,
+        int(st.session_state.user_id),
+        database,
+    )
 initialize_state(storefront_snapshot)
 current_user = st.session_state.get("current_user")
 if current_user is None:
