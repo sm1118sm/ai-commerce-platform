@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
+import hashlib
 from html import escape
 import logging
 import os
@@ -47,9 +48,12 @@ AUTH_SESSION_SECRET = (
 AUTH_COOKIE_COMPONENT_ENABLED = (
     os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") != "1"
 )
-# Increment when StoreDatabase gains methods or state that make an object from
-# an earlier Streamlit hot deployment incompatible with the current app.
-DATABASE_RESOURCE_VERSION = "2026-07-reviews-v1"
+# Streamlit Cloud can keep ``st.cache_resource`` values across hot deploys.
+# Key the database resource by its implementation so a newly deployed class
+# can never reuse an instance created from an older version of database.py.
+DATABASE_RESOURCE_VERSION = hashlib.sha256(
+    (ROOT / "src" / "database.py").read_bytes()
+).hexdigest()[:16]
 st.set_page_config(
     page_title="StylePick AI",
     page_icon="✨",
