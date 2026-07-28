@@ -140,9 +140,26 @@ class AppSmokeTest(unittest.TestCase):
                 [tab.label for tab in app.tabs],
                 ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"],
             )
-            self.assertIn(
-                "결제 내역",
-                [expander.label for expander in app.expander],
+            sidebar_summary_labels = [
+                expander.label for expander in app.expander
+            ]
+            self.assertTrue(
+                any(
+                    label.startswith("찜한 상품 ·")
+                    for label in sidebar_summary_labels
+                )
+            )
+            self.assertTrue(
+                any(
+                    label.startswith("장바구니 수량 ·")
+                    for label in sidebar_summary_labels
+                )
+            )
+            self.assertTrue(
+                any(
+                    label.startswith("결제 내역 ·")
+                    for label in sidebar_summary_labels
+                )
             )
 
     def test_login_and_logout_callbacks_change_screen_once(self) -> None:
