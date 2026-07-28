@@ -36,6 +36,7 @@ class AppSmokeTest(unittest.TestCase):
             os.environ,
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
+                "RECOMMENDER_BACKEND": "tfidf",
                 "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
             clear=False,
@@ -241,6 +242,12 @@ class AppSmokeTest(unittest.TestCase):
                 default_timeout=APP_TEST_TIMEOUT_SECONDS,
             ).run()
             original_user_id = app.session_state["user_id"]
+            original_nickname = app.session_state["nickname"]
+            original_current_user = dict(
+                app.session_state["current_user"]
+            )
+            original_cart = dict(app.session_state["cart"])
+            original_favorites = set(app.session_state["favorites"])
             next(
                 button for button in app.button
                 if button.label == "상세"
@@ -259,6 +266,22 @@ class AppSmokeTest(unittest.TestCase):
             self.assertEqual(
                 app.session_state["user_id"],
                 original_user_id,
+            )
+            self.assertEqual(
+                app.session_state["nickname"],
+                original_nickname,
+            )
+            self.assertEqual(
+                dict(app.session_state["current_user"]),
+                original_current_user,
+            )
+            self.assertEqual(
+                dict(app.session_state["cart"]),
+                original_cart,
+            )
+            self.assertEqual(
+                set(app.session_state["favorites"]),
+                original_favorites,
             )
             self.assertIsNone(
                 app.session_state["selected_product_id"]
