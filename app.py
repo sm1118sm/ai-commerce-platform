@@ -228,10 +228,10 @@ st.markdown(
       .hero-stat b { display: block; font-size: 1.35rem; }
       .hero-stat span { opacity: .76; font-size: .75rem; }
       .auth-hero {
-        min-height: 590px;
+        min-height: 520px;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: center;
         padding: clamp(2rem, 5vw, 4.5rem);
         color: white;
         border-radius: 30px;
@@ -248,20 +248,6 @@ st.markdown(
         letter-spacing: -.06em;
       }
       .auth-hero p { max-width: 520px; line-height: 1.7; opacity: .88; }
-      .auth-benefits {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: .65rem;
-        margin-top: 2rem;
-      }
-      .auth-benefit {
-        padding: .9rem;
-        border-radius: 16px;
-        background: rgba(255,255,255,.12);
-        border: 1px solid rgba(255,255,255,.16);
-        font-size: .8rem;
-        font-weight: 700;
-      }
       .auth-panel {
         padding: 1rem .25rem 1.5rem;
       }
@@ -493,8 +479,7 @@ st.markdown(
         .hero h1 { font-size: 2.35rem; }
         .hero-summary { grid-template-columns: repeat(2, 1fr); padding: .55rem; }
         .hero-stat { padding: .7rem; }
-        .auth-hero { min-height: 430px; padding: 2rem 1.35rem; border-radius: 22px; }
-        .auth-benefits { grid-template-columns: 1fr; }
+        .auth-hero { min-height: 320px; padding: 2rem 1.35rem; border-radius: 22px; }
         .auth-panel { padding: .5rem .1rem 1rem; }
         .section-heading { margin-top: 1.2rem; }
         div[data-testid="stHorizontalBlock"]:has(.product-card) {
@@ -1135,11 +1120,6 @@ def render_auth() -> None:
                   검색, 찜, 장바구니 행동을 안전하게 분리 저장하고
                   왜 추천했는지 설명하는 개인화 쇼핑을 경험해 보세요.
                 </p>
-              </div>
-              <div class="auth-benefits">
-                <div class="auth-benefit">✨ 자연어 AI 추천</div>
-                <div class="auth-benefit">🔒 비밀번호 해시 저장</div>
-                <div class="auth-benefit">📱 모바일 반응형</div>
               </div>
             </section>
             """,
