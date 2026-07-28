@@ -55,6 +55,50 @@ mysql://USER:URL_ENCODED_PASSWORD@HOST:PORT/defaultdb?ssl-mode=REQUIRED
 이메일, 닉네임, 마스킹된 전화번호, 가입 시각만 확인할 수 있습니다.
 실제 DB 주소·비밀번호·`.env`는 GitHub에 올리지 마세요.
 
+### Aiven 회원 DB를 DBeaver에서 확인하기
+
+Aiven 웹 화면의 **Connect → Users**는 쇼핑몰 회원 목록이 아니라 DB 접속
+계정입니다. 실제 쇼핑몰 회원은 `defaultdb` 데이터베이스의 `users`
+테이블에서 확인합니다.
+
+1. [Aiven Console](https://console.aiven.io/)에서 MySQL 서비스를 선택한다.
+2. **Overview → Quick connect**를 열어 `Host`, `Port`, `User`,
+   `Password`를 확인한다.
+3. 무료 [DBeaver Community](https://dbeaver.io/download/)를 설치하고
+   실행한다.
+4. 왼쪽 위 **새 데이터베이스 연결 → MySQL → Next**를 선택한다.
+5. DBeaver 연결 화면에 다음 값을 입력한다.
+
+   | DBeaver 입력란 | Aiven에서 넣을 값 |
+   | --- | --- |
+   | Server Host | `Host` |
+   | Port | `Port` |
+   | Database | `defaultdb` |
+   | Username | `User` |
+   | Password | `Password` |
+
+6. **Test Connection**을 누른다. 드라이버 설치 안내가 나오면
+   **Download**를 누르고, 연결 성공 후 **Finish**를 누른다.
+7. 왼쪽 **Database Navigator → 연결한 MySQL → defaultdb → Tables →
+   users**로 이동한다.
+8. `users`를 마우스 오른쪽 버튼으로 누르고 **View Data → All Rows**를
+   선택한다.
+
+회원 목록에 필요한 항목만 안전하게 조회하려면 DBeaver의 SQL 편집기에서
+다음을 실행합니다.
+
+```sql
+SELECT id, email, nickname, phone_number, status,
+       created_at, last_login_at
+FROM users
+ORDER BY id DESC;
+```
+
+관련 데이터는 `user_preferences`(AI 추천 취향), `user_favorites`(찜),
+`user_cart`(장바구니), `user_orders`와 `order_items`(주문),
+`behavior_logs`(클릭·검색·구매 행동)에서 확인할 수 있습니다. 운영 DB에서는
+의도하지 않은 `UPDATE`, `DELETE`, 테이블 삭제를 실행하지 마세요.
+
 ### Aiven DB 연결 오류 해결
 
 다음 증상은 Aiven 무료 MySQL 서비스가 비활성화됐거나 Service URI가 변경된
