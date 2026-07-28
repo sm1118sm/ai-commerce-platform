@@ -1066,7 +1066,11 @@ def get_remembered_user(user_id: int) -> dict:
         except Exception as error:
             last_error = error
             if attempt == 0:
-                time.sleep(0.08)
+                # DBUtils normally pings idle sockets, but a free remote MySQL
+                # node can invalidate the whole pool while it wakes. Rebuild
+                # the pool before retrying instead of returning a manual error.
+                database.reset_connection_pool()
+                time.sleep(0.2)
     assert last_error is not None
     raise last_error
 

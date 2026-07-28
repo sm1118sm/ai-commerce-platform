@@ -299,6 +299,19 @@ class StoreDatabase:
                     )
         return self._mysql_pool.connection()
 
+    def reset_connection_pool(self) -> None:
+        """Discard stale pooled sockets after a transient MySQL disconnect."""
+        if self.kind != "mysql":
+            return
+        with self._mysql_pool_lock:
+            stale_pool = self._mysql_pool
+            self._mysql_pool = None
+        if stale_pool is not None:
+            try:
+                stale_pool.close()
+            except Exception:
+                pass
+
     @contextmanager
     def connect(self):
         if self.kind == "mysql":
