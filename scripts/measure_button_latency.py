@@ -309,7 +309,25 @@ class ButtonLatencyRun:
             )
             if app.session_state["last_order"] is None:
                 raise AssertionError("모의 주문 버튼이 주문 결과를 만들지 못했습니다.")
+            order_id = str(app.session_state["last_order"]["order_id"])
             self.click(app, "새 쇼핑 계속하기", label="새 쇼핑 계속하기")
+            self.click(
+                app,
+                "주문 취소 확인 열기",
+                key=f"sidebar_cancel_order_{order_id}",
+            )
+            self.click(
+                app,
+                "사이드바 주문 취소 확정",
+                key=f"sidebar_confirm_cancel_{order_id}",
+            )
+            canceled_order = next(
+                order
+                for order in app.session_state["order_history"]
+                if str(order["order_id"]) == order_id
+            )
+            if str(canceled_order["status"]) != "CANCELED_DEMO":
+                raise AssertionError("주문 취소 상태가 즉시 반영되지 않았습니다.")
 
     def print_summary(self) -> bool:
         print("\nBUTTON LATENCY SUMMARY")
