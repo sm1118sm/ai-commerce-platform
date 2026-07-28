@@ -581,14 +581,33 @@ st.markdown(
           padding: .52rem .58rem;
           border-radius: 15px;
         }
+        .st-key-store_header
+        > div[data-testid="stVerticalBlock"]
+        > div[data-testid="stHorizontalBlock"] {
+          display: grid;
+          grid-template-columns: 42px minmax(88px, 1fr) 52px 52px;
+          align-items: center;
+          gap: .35rem;
+        }
+        .st-key-store_header
+        > div[data-testid="stVerticalBlock"]
+        > div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"] {
+          width: auto !important;
+          min-width: 0 !important;
+          flex: none !important;
+        }
         .st-key-store_header .brand-name,
         .st-key-store_header .brand-caption {
           display: none;
         }
         .st-key-store_header button {
+          width: 100%;
           min-height: 38px;
           padding-inline: .55rem;
           font-size: .76rem;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .brand-caption, .header-status .status-chip:first-child { display: none; }
         .brand-mark { width: 38px; height: 38px; }
