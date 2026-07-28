@@ -158,6 +158,21 @@ st.markdown(
         word-break: keep-all;
         overflow-wrap: anywhere;
       }
+      .detail-info-marker {
+        height: 0;
+        overflow: hidden;
+      }
+      .block-container:has(.detail-page-marker)
+      div[data-testid="stHorizontalBlock"]:has(.detail-product-visual) {
+        align-items: flex-start;
+        column-gap: clamp(2rem, 3vw, 3.25rem) !important;
+        row-gap: 1.75rem !important;
+      }
+      .block-container:has(.detail-page-marker)
+      div[data-testid="stHorizontalBlock"]:has(.detail-product-visual)
+      > div[data-testid="stColumn"]:has(.detail-info-marker) {
+        padding-top: .65rem;
+      }
       .store-header {
         display: flex;
         align-items: center;
@@ -512,6 +527,15 @@ st.markdown(
         .detail-product-visual { min-height: 220px; }
         .detail-product-emoji { font-size: 5.75rem; }
         .detail-product-title { font-size: 2rem; }
+        .block-container:has(.detail-page-marker)
+        div[data-testid="stHorizontalBlock"]:has(.detail-product-visual) {
+          gap: 1.75rem !important;
+        }
+        .block-container:has(.detail-page-marker)
+        div[data-testid="stHorizontalBlock"]:has(.detail-product-visual)
+        > div[data-testid="stColumn"]:has(.detail-info-marker) {
+          padding-top: .35rem;
+        }
         .store-header {
           position: sticky;
           top: .45rem;
@@ -1372,6 +1396,19 @@ def remove_from_cart(product_id: str) -> None:
     st.session_state.cart.pop(product_id, None)
 
 
+def refresh_catalog_stock(order: dict) -> None:
+    """Apply committed order stock to the in-memory catalog immediately."""
+    catalog_snapshot = database.catalog_snapshot
+    for item in order.get("items", []):
+        product_id = str(item["product_id"])
+        remaining_stock = int(item["remaining_stock"])
+        catalog_snapshot.loc[
+            catalog_snapshot["id"] == product_id,
+            "stock",
+        ] = remaining_stock
+    get_database_products.clear()
+
+
 def complete_order() -> None:
     st.session_state.pop("checkout_error", None)
     try:
@@ -1380,6 +1417,7 @@ def complete_order() -> None:
             int(st.session_state.user_id),
             st.session_state.session_id,
         )
+        refresh_catalog_stock(order)
         st.session_state.last_order = order
         st.session_state.order_history = [
             order,
@@ -1426,6 +1464,7 @@ def buy_product_now(product_id: str) -> None:
             product_id,
             quantity,
         )
+        refresh_catalog_stock(order)
         st.session_state.detail_order = order
         st.session_state.order_history = [
             order,
@@ -1502,6 +1541,10 @@ def render_product_detail_page(product_id: str) -> None:
             unsafe_allow_html=True,
         )
     with info_col:
+        st.markdown(
+            '<div class="detail-info-marker" aria-hidden="true"></div>',
+            unsafe_allow_html=True,
+        )
         st.caption(
             f"{product['brand']} · {product['category']} · ⭐ {product['rating']}"
         )
@@ -1516,13 +1559,26 @@ def render_product_detail_page(product_id: str) -> None:
         price_col, stock_col = st.columns(2)
         price_col.metric("판매가", f"{int(product['price']):,}원")
         stock_col.metric("현재 재고", f"{int(product['stock'])}개")
-        st.number_input(
-            "구매 수량",
-            min_value=1,
-            max_value=min(10, int(product["stock"])),
-            value=1,
-            key=f"detail_quantity_{product_id}",
-        )
+        available_stock = int(product["stock"])
+        quantity_key = f"detail_quantity_{product_id}"
+        if available_stock > 0:
+            maximum_quantity = min(10, available_stock)
+            selected_quantity = min(
+                maximum_quantity,
+                max(1, int(st.session_state.get(quantity_key, 1))),
+            )
+            if quantity_key in st.session_state:
+                st.session_state[quantity_key] = selected_quantity
+            st.number_input(
+                "구매 수량",
+                min_value=1,
+                max_value=maximum_quantity,
+                value=selected_quantity,
+                key=quantity_key,
+            )
+        else:
+            st.session_state.pop(quantity_key, None)
+            st.warning("현재 재고가 모두 소진되었습니다.")
 
     favorite_label = (
         "찜 해제" if product_id in st.session_state.favorites else "♡ 찜하기"
