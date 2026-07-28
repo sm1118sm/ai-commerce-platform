@@ -1134,9 +1134,7 @@ def delete_current_user() -> None:
 def save_profile_settings() -> None:
     st.session_state.pop("profile_error", None)
     try:
-        saved_nickname = (
-            st.session_state.get("profile_nickname", "").strip() or "게스트"
-        )
+        saved_nickname = st.session_state.nickname
         interests = list(st.session_state.get("profile_interests", []))
         budget = tuple(st.session_state.get("profile_budget", (0, 250_000)))
         database.save_profile(
@@ -1148,9 +1146,6 @@ def save_profile_settings() -> None:
         st.session_state.nickname = saved_nickname
         st.session_state.interests = interests
         st.session_state.budget = budget
-        st.session_state.header_profile_nickname = saved_nickname
-        st.session_state.header_profile_interests = interests
-        st.session_state.header_profile_budget = budget
         if st.session_state.get("current_user"):
             st.session_state.current_user["nickname"] = saved_nickname
         get_cached_user.clear()
@@ -1173,10 +1168,6 @@ def verify_header_profile_password() -> None:
         st.session_state.header_profile_phone = format_phone_input(
             str(account.get("phone_number") or "")
         )
-        st.session_state.header_profile_interests = list(
-            st.session_state.interests
-        )
-        st.session_state.header_profile_budget = tuple(st.session_state.budget)
     except ValueError as error:
         st.session_state.header_profile_verified = False
         st.session_state.header_profile_error = str(error)
@@ -1196,12 +1187,8 @@ def save_header_account_settings() -> None:
             or "게스트"
         )
         phone = st.session_state.get("header_profile_phone", "")
-        interests = list(
-            st.session_state.get("header_profile_interests", [])
-        )
-        budget = tuple(
-            st.session_state.get("header_profile_budget", (0, 250_000))
-        )
+        interests = list(st.session_state.interests)
+        budget = tuple(st.session_state.budget)
         database.save_profile(
             int(st.session_state.user_id),
             nickname,
@@ -2216,13 +2203,37 @@ if selected_product_id := st.session_state.get("selected_product_id"):
 with st.sidebar:
     st.caption(f"로그인: {current_user['email']}")
     st.header(f"👤 {st.session_state.nickname}님")
-    interests_label = ", ".join(st.session_state.interests) or "미설정"
-    st.caption(f"관심 카테고리 · {interests_label}")
+    st.subheader("AI 추천 취향")
+    st.caption("저장한 값은 AI 추천에 계속 반영되며 상품 탐색 필터와는 별개입니다.")
+    with st.form("sidebar_preference_form"):
+        st.multiselect(
+            "관심 카테고리 (AI 추천)",
+            CATEGORIES,
+            max_selections=3,
+            key="profile_interests",
+        )
+        st.slider(
+            "관심 가격대 (AI 추천)",
+            min_value=0,
+            max_value=MAX_PRICE,
+            step=5_000,
+            format="%d원",
+            key="profile_budget",
+        )
+        st.form_submit_button(
+            "추천 취향 저장",
+            type="primary",
+            width="stretch",
+            on_click=save_profile_settings,
+        )
+    if st.session_state.pop("profile_saved_notice", False):
+        st.success("AI 추천 취향을 저장했습니다.")
+    if profile_error := st.session_state.get("profile_error"):
+        st.error(profile_error)
     st.caption(
-        f"관심 가격대 · {int(st.session_state.budget[0]):,}원~"
-        f"{int(st.session_state.budget[1]):,}원"
+        "닉네임·전화번호·비밀번호는 화면 상단의 프로필 버튼에서 "
+        "현재 비밀번호 확인 후 수정할 수 있습니다."
     )
-    st.info("계정 정보 수정은 화면 상단의 프로필 버튼에서 비밀번호 확인 후 가능합니다.")
     st.divider()
     favorite_count = len(st.session_state.favorites)
     with st.expander(f"찜한 상품 · {favorite_count}개"):
@@ -2392,20 +2403,6 @@ with st.container(key="store_header"):
                     "전화번호",
                     key="header_profile_phone",
                     max_chars=20,
-                )
-                st.multiselect(
-                    "관심 카테고리",
-                    CATEGORIES,
-                    max_selections=3,
-                    key="header_profile_interests",
-                )
-                st.slider(
-                    "관심 가격대",
-                    min_value=0,
-                    max_value=MAX_PRICE,
-                    step=5_000,
-                    format="%d원",
-                    key="header_profile_budget",
                 )
                 st.text_input(
                     "새 비밀번호",
