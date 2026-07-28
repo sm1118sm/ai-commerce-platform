@@ -107,7 +107,17 @@ st.markdown(
         padding-bottom: 6rem;
       }
       .block-container:has(.detail-page-marker) {
-        padding-top: 5.25rem;
+        position: fixed;
+        inset: 3rem 0 0;
+        z-index: 80;
+        max-width: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        box-sizing: border-box;
+        padding: 4.5rem max(1rem, calc((100vw - 1280px) / 2)) 2rem;
+        background:
+          radial-gradient(circle at 8% 0%, rgba(91,76,240,.08), transparent 26rem),
+          #f8f9fc;
       }
       .detail-page-marker {
         height: 0;
