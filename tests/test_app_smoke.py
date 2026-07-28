@@ -143,13 +143,13 @@ class AppSmokeTest(unittest.TestCase):
             sidebar_summary_labels = [
                 expander.label for expander in app.expander
             ]
-            self.assertTrue(
+            self.assertFalse(
                 any(
                     label.startswith("찜한 상품 ·")
                     for label in sidebar_summary_labels
                 )
             )
-            self.assertTrue(
+            self.assertFalse(
                 any(
                     label.startswith("장바구니 수량 ·")
                     for label in sidebar_summary_labels

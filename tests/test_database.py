@@ -175,15 +175,18 @@ class DatabaseTest(unittest.TestCase):
             (20_000, 120_000),
         )
         self.assertEqual(database.load_profile(user_id)["nickname"], "테스터")
-        database.verify_user_password(user_id, "Secure-password!")
+        verified_account = database.verify_user_password(
+            user_id,
+            "Secure-password!",
+        )
+        self.assertEqual(int(verified_account["id"]), user_id)
+        self.assertNotIn("password_hash", verified_account)
         with self.assertRaisesRegex(ValueError, "비밀번호가 올바르지"):
             database.verify_user_password(user_id, "Wrong-password!")
-        database.save_profile(
+        database.update_account_settings(
             user_id,
             "테스터",
-            ["전자기기", "스포츠"],
-            (20_000, 120_000),
-            phone_number="010-9999-8888",
+            "010-9999-8888",
             new_password="Changed-password!",
         )
         self.assertEqual(
