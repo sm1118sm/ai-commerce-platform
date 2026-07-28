@@ -36,6 +36,8 @@ if not DATABASE_TARGET:
         "DATABASE_URL이 필요합니다. .env.example 또는 docker-compose.yml을 참고하세요."
     )
 AUTH_COOKIE_NAME = "stylepick_session"
+AUTH_QUERY_PARAM = "sp_session"
+AUTH_STORAGE_NAME = "stylepick_session"
 AUTH_SESSION_TTL_SECONDS = 2 * 60 * 60
 AUTH_SESSION_SECRET = (
     os.environ.get("SESSION_SECRET") or DATABASE_TARGET
@@ -644,11 +646,9 @@ def queue_auth_cookie(
 
 
 def render_auth_cookie_action() -> None:
-    """Apply a queued login cookie without exposing its signed value in the UI."""
+    """Sync signed auth state with cookie and browser storage."""
     queued = st.session_state.pop("auth_cookie_action", None)
-    if not queued:
-        return
-    action, token, expires_at = queued
+    action, token, expires_at = queued or ("", "", 0)
     is_production = (
         os.environ.get("APP_ENV", "development").lower() == "production"
     )
@@ -659,16 +659,47 @@ def render_auth_cookie_action() -> None:
             f"{AUTH_COOKIE_NAME}={token}; Path=/; Max-Age={max_age}; "
             f"SameSite=Lax{secure}"
         )
-    else:
+    elif action == "clear":
         cookie = (
             f"{AUTH_COOKIE_NAME}=; Path=/; Max-Age=0; "
             f"SameSite=Lax{secure}"
         )
+    else:
+        cookie = ""
+    action_literal = json.dumps(action)
     cookie_literal = json.dumps(cookie)
+    token_literal = json.dumps(token)
+    storage_name_literal = json.dumps(AUTH_STORAGE_NAME)
+    query_name_literal = json.dumps(AUTH_QUERY_PARAM)
+    allow_restore = bool(
+        not st.session_state.user_id
+        and not st.session_state.get("auth_cookie_restore_blocked")
+        and not st.query_params.get(AUTH_QUERY_PARAM)
+    )
+    allow_restore_literal = "true" if allow_restore else "false"
     st.iframe(
         f"""
         <script>
-          window.parent.document.cookie = {cookie_literal};
+        (() => {{
+          const parentWindow = window.parent;
+          const action = {action_literal};
+          const storageName = {storage_name_literal};
+          const token = {token_literal};
+          if (action === "set") {{
+            parentWindow.localStorage.setItem(storageName, token);
+            parentWindow.document.cookie = {cookie_literal};
+          }} else if (action === "clear") {{
+            parentWindow.localStorage.removeItem(storageName);
+            parentWindow.document.cookie = {cookie_literal};
+          }} else if ({allow_restore_literal}) {{
+            const savedToken = parentWindow.localStorage.getItem(storageName);
+            if (savedToken) {{
+              const url = new URL(parentWindow.location.href);
+              url.searchParams.set({query_name_literal}, savedToken);
+              parentWindow.location.replace(url.toString());
+            }}
+          }}
+        }})();
         </script>
         """,
         height=1,
@@ -704,12 +735,15 @@ def initialize_auth() -> None:
         not st.session_state.user_id
         and not st.session_state.get("auth_cookie_restore_blocked")
     ):
-        raw_token = st.context.cookies.get(AUTH_COOKIE_NAME)
+        query_token = st.query_params.get(AUTH_QUERY_PARAM)
+        raw_token = query_token or st.context.cookies.get(AUTH_COOKIE_NAME)
         if raw_token:
             claims = verify_session_token(
                 raw_token,
                 AUTH_SESSION_SECRET,
             )
+            if query_token:
+                st.query_params.pop(AUTH_QUERY_PARAM, None)
             if claims is None:
                 queue_auth_cookie("clear")
                 st.session_state.auth_cookie_restore_blocked = True
