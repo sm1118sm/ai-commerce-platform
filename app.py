@@ -432,6 +432,8 @@ def get_database(database_url: str) -> StoreDatabase:
     cached_database = StoreDatabase(database_url)
     cached_database.seed_products(get_products())
     cached_database.catalog_snapshot = cached_database.load_products()
+    if os.environ.get("DEMO_MODE", "true").lower() == "true":
+        cached_database.ensure_demo_user()
     return cached_database
 
 
@@ -836,6 +838,7 @@ def initialize_state(snapshot: dict) -> None:
     st.session_state.behavior_weights = snapshot["behavior_weights"]
     st.session_state.trend_scores = snapshot["trend_scores"]
     st.session_state.purchased_ids = snapshot["purchased_ids"]
+    st.session_state.order_history = snapshot["order_history"]
     st.session_state.last_order = None
     st.session_state.loaded_user_id = user_id
 
@@ -879,10 +882,15 @@ def remove_from_cart(product_id: str) -> None:
 def complete_order() -> None:
     st.session_state.pop("checkout_error", None)
     try:
-        st.session_state.last_order = database.create_order(
+        order = database.create_order(
             int(st.session_state.user_id),
             st.session_state.session_id,
         )
+        st.session_state.last_order = order
+        st.session_state.order_history = [
+            order,
+            *st.session_state.get("order_history", []),
+        ][:5]
         st.session_state.cart = {}
     except ValueError as error:
         st.session_state.checkout_error = str(error)
@@ -1478,12 +1486,7 @@ with cart_tab:
         if checkout_error := st.session_state.get("checkout_error"):
             st.error(checkout_error)
 
-    order_history = get_cached_order_history(
-        DATABASE_TARGET,
-        int(st.session_state.user_id),
-        5,
-        database,
-    )
+    order_history = st.session_state.order_history
     if order_history:
         with st.expander("최근 모의 주문 내역"):
             for order in order_history:
