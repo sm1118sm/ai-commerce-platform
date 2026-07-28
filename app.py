@@ -194,6 +194,8 @@ st.markdown(
         backdrop-filter: blur(14px);
       }
       .st-key-store_header {
+        container-name: store-header;
+        container-type: inline-size;
         padding: .72rem 1rem;
         margin-bottom: 1.1rem;
         background: rgba(255,255,255,.9);
@@ -498,6 +500,51 @@ st.markdown(
       }
       .store-footer b { color: var(--sp-ink); }
 
+      @container store-header (max-width: 720px) {
+        .st-key-store_header div[data-testid="stHorizontalBlock"] {
+          display: grid !important;
+          grid-template-columns: 42px minmax(92px, 1fr) 64px 64px !important;
+          align-items: center;
+          gap: .35rem;
+        }
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"] {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: auto !important;
+          height: 42px;
+          min-width: 0 !important;
+          max-width: none !important;
+          flex: none !important;
+        }
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"]
+        > div[data-testid="stVerticalBlock"] {
+          width: 100%;
+          height: 42px;
+          justify-content: center;
+          gap: 0;
+        }
+        .st-key-store_header .brand-lockup {
+          height: 42px;
+          justify-content: center;
+        }
+        .st-key-store_header .brand-name,
+        .st-key-store_header .brand-caption {
+          display: none;
+        }
+        .st-key-store_header button {
+          width: 100%;
+          height: 42px;
+          min-height: 42px;
+          padding: 0 .45rem;
+          font-size: .76rem;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+
       @media (max-width: 1200px) {
         .hero {
           grid-template-columns: 1fr;
@@ -601,7 +648,7 @@ st.markdown(
         }
         .st-key-store_header div[data-testid="stHorizontalBlock"] {
           display: grid !important;
-          grid-template-columns: 42px minmax(92px, 1fr) 56px 56px !important;
+          grid-template-columns: 42px minmax(92px, 1fr) 64px 64px !important;
           align-items: center;
           gap: .35rem;
         }
