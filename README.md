@@ -158,6 +158,8 @@ python scripts/train_textcnn.py
 
 ## 문서
 
+- [최종 발표자료 보기 (PDF)](발표자료.pdf)
+- [최종 발표자료 다운로드 (PPTX)](발표자료.pptx)
 - [배포 방법](docs/DEPLOYMENT.md)
 - [다음 작업 체크리스트](docs/ROADMAP.md)
 - [추천 모델 설계](docs/RECOMMENDER_DESIGN.md)
