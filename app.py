@@ -1399,7 +1399,15 @@ def remove_from_cart(product_id: str) -> None:
 def refresh_catalog_stock(order: dict) -> None:
     """Apply committed order stock to the in-memory catalog immediately."""
     catalog_snapshot = database.catalog_snapshot
-    for item in order.get("items", []):
+    items = order.get("items", [])
+    if any("remaining_stock" not in item for item in items):
+        # A Streamlit hot deployment can briefly retain the cached database
+        # object from the previous app version. Reload from the database when
+        # that object returns the older order payload shape.
+        database.catalog_snapshot = database.load_products()
+        get_database_products.clear()
+        return
+    for item in items:
         product_id = str(item["product_id"])
         remaining_stock = int(item["remaining_stock"])
         catalog_snapshot.loc[
@@ -1458,6 +1466,18 @@ def buy_product_now(product_id: str) -> None:
         quantity = int(
             st.session_state.get(f"detail_quantity_{product_id}", 1)
         )
+        product_rows = products.loc[products["id"] == product_id]
+        available_stock = (
+            int(product_rows.iloc[0]["stock"])
+            if not product_rows.empty
+            else 0
+        )
+        if quantity > 10:
+            raise ValueError("최대 구매 수량(10개)을 초과했습니다.")
+        if quantity > available_stock:
+            raise ValueError(
+                f"현재 구매 가능한 최대 수량은 {available_stock}개입니다."
+            )
         order = database.create_product_order(
             int(st.session_state.user_id),
             st.session_state.session_id,

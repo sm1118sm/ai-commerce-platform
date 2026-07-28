@@ -237,6 +237,25 @@ class DatabaseTest(unittest.TestCase):
                 "stock",
             ].iloc[0]
         )
+        with self.assertRaisesRegex(
+            ValueError,
+            r"최대 구매 수량\(10개\)을 초과했습니다",
+        ):
+            database.create_product_order(
+                user_id,
+                "test-session",
+                "P001",
+                11,
+            )
+        self.assertEqual(
+            int(
+                database.load_products().loc[
+                    lambda frame: frame["id"] == "P001",
+                    "stock",
+                ].iloc[0]
+            ),
+            direct_stock_before,
+        )
         direct_order = database.create_product_order(
             user_id,
             "test-session",

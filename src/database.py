@@ -1338,8 +1338,10 @@ class StoreDatabase:
     ) -> dict:
         """Create a demo buy-now order without changing the existing cart."""
         quantity = int(quantity)
-        if not 1 <= quantity <= 10:
-            raise ValueError("수량은 1~10개만 선택할 수 있습니다.")
+        if quantity < 1:
+            raise ValueError("구매 수량은 1개 이상이어야 합니다.")
+        if quantity > 10:
+            raise ValueError("최대 구매 수량(10개)을 초과했습니다.")
         with self.connect() as connection:
             product = connection.execute(
                 """
