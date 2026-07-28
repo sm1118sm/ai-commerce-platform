@@ -410,6 +410,16 @@ st.markdown(
       [data-testid="stMetric"] {
         background:white; border:1px solid var(--sp-line); border-radius:16px; padding:14px;
       }
+      [data-testid="stSidebar"] [data-testid="stExpander"] {
+        overflow: hidden;
+        border: 1px solid var(--sp-line);
+        border-radius: 16px;
+        background: #fff;
+      }
+      [data-testid="stSidebar"] [data-testid="stExpander"] summary {
+        min-height: 54px;
+        font-weight: 750;
+      }
       button[kind="primary"] {
         background: linear-gradient(110deg, var(--sp-primary), #7c3aed) !important;
         border: 0 !important;
@@ -1867,10 +1877,47 @@ with st.sidebar:
     if profile_error := st.session_state.get("profile_error"):
         st.error(profile_error)
     st.divider()
-    st.metric("찜한 상품", len(st.session_state.favorites))
-    st.metric("장바구니 수량", sum(st.session_state.cart.values()))
-    with st.expander("결제 내역"):
-        sidebar_orders = st.session_state.get("order_history", [])
+    favorite_count = len(st.session_state.favorites)
+    with st.expander(f"찜한 상품 · {favorite_count}개"):
+        sidebar_favorites = products[
+            products["id"].isin(st.session_state.favorites)
+        ]
+        if sidebar_favorites.empty:
+            st.caption("찜한 상품이 없습니다.")
+        else:
+            for index, (_, item) in enumerate(
+                sidebar_favorites.iterrows()
+            ):
+                if index:
+                    st.divider()
+                st.markdown(f"{item['emoji']} **{item['name']}**")
+                st.caption(
+                    f"{int(item['price']):,}원 · "
+                    f"재고 {int(item['stock'])}개"
+                )
+
+    cart_count = sum(st.session_state.cart.values())
+    with st.expander(f"장바구니 수량 · {cart_count}개"):
+        sidebar_cart = products[
+            products["id"].isin(st.session_state.cart)
+        ]
+        if sidebar_cart.empty:
+            st.caption("장바구니가 비어 있습니다.")
+        else:
+            sidebar_cart_total = 0
+            for index, (_, item) in enumerate(sidebar_cart.iterrows()):
+                if index:
+                    st.divider()
+                quantity = int(st.session_state.cart[str(item["id"])])
+                line_total = int(item["price"]) * quantity
+                sidebar_cart_total += line_total
+                st.markdown(f"{item['emoji']} **{item['name']}**")
+                st.caption(f"{quantity}개 · {line_total:,}원")
+            st.divider()
+            st.markdown(f"**합계 {sidebar_cart_total:,}원**")
+
+    sidebar_orders = st.session_state.get("order_history", [])
+    with st.expander(f"결제 내역 · {len(sidebar_orders)}건"):
         if not sidebar_orders:
             st.caption("아직 모의결제 내역이 없습니다.")
         else:
@@ -1888,7 +1935,7 @@ with st.sidebar:
                 )
                 if item_names:
                     st.caption(item_names)
-                st.code(str(order["order_id"]), language=None)
+                st.caption(f"주문번호 · {order['order_id']}")
             st.caption("최근 모의결제 5건까지 표시됩니다.")
     st.caption(
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
