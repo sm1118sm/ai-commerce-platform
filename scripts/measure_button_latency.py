@@ -30,6 +30,7 @@ RESPONSE_BUDGET_SECONDS = 2.0
 TEST_DATABASE_URL = os.environ.get("STYLEPICK_TEST_DATABASE_URL", "")
 TEST_PASSWORD = "Latency-test!"
 PRODUCT_ID = "P028"
+DETAIL_PRODUCT_ID = "P020"
 
 
 class ButtonLatencyRun:
@@ -183,10 +184,36 @@ class ButtonLatencyRun:
             self.click(app, "취향 저장", label="취향 저장")
 
     def measure_product_detail(self, app: AppTest) -> None:
-        detail_key = f"shop_page_0_detail_{PRODUCT_ID}"
+        detail_key = f"shop_page_0_detail_{DETAIL_PRODUCT_ID}"
         for _ in range(REPEAT_COUNT):
             self.click(app, "상품 상세", key=detail_key)
-            app.run()
+            self.click(app, "상세에서 돌아가기", key="detail_back")
+
+        self.click(app, "상세 동작 준비", key=detail_key, record=False)
+        for _ in range(REPEAT_COUNT):
+            self.click(
+                app,
+                "상세 찜 토글",
+                key=f"detail_favorite_{DETAIL_PRODUCT_ID}",
+            )
+        for _ in range(REPEAT_COUNT):
+            self.click(
+                app,
+                "상세 장바구니 담기",
+                key=f"detail_cart_{DETAIL_PRODUCT_ID}",
+            )
+        for _ in range(REPEAT_COUNT):
+            self.click(
+                app,
+                "상세 바로 모의결제",
+                key=f"detail_buy_{DETAIL_PRODUCT_ID}",
+            )
+        self.click(
+            app,
+            "상세 동작 종료",
+            key="detail_back",
+            record=False,
+        )
 
     def measure_favorite(self, app: AppTest) -> None:
         favorite_key = f"shop_page_0_favorite_{PRODUCT_ID}"
@@ -197,6 +224,24 @@ class ButtonLatencyRun:
         cart_key = f"shop_page_0_cart_{PRODUCT_ID}"
         for _ in range(REPEAT_COUNT):
             self.click(app, "장바구니 담기", key=cart_key)
+
+        for quantity in range(6, 11):
+            quantity_input = next(
+                field
+                for field in app.number_input
+                if field.key == f"quantity_{PRODUCT_ID}"
+            )
+            started_at = perf_counter()
+            quantity_input.set_value(quantity).run()
+            elapsed_seconds = perf_counter() - started_at
+            self.samples["장바구니 수량 변경"].append(elapsed_seconds)
+            print(
+                f"장바구니 수량 변경 "
+                f"#{len(self.samples['장바구니 수량 변경'])}: "
+                f"{elapsed_seconds:.3f}s"
+            )
+            if int(app.session_state["cart"][PRODUCT_ID]) != quantity:
+                raise AssertionError("화면의 장바구니 수량이 즉시 갱신되지 않았습니다.")
 
         self.click(
             app,
@@ -263,6 +308,7 @@ def main() -> int:
     os.environ.update(
         DATABASE_URL=TEST_DATABASE_URL,
         RECOMMENDER_BACKEND="tfidf",
+        STYLEPICK_TEST_SYNC_STARTUP="1",
     )
 
     run = ButtonLatencyRun()

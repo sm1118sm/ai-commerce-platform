@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from concurrent.futures import Future
 from html import escape
 import logging
 import os
 from pathlib import Path
+from threading import Thread, Timer
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-import pandas as pd
 import streamlit as st
 
-from src.catalog import load_products
 from src.database import (
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
@@ -19,7 +20,9 @@ from src.database import (
     normalize_email,
     normalize_nickname,
 )
-from src.recommender import fit_recommender, recommend
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parent
@@ -29,7 +32,6 @@ if not DATABASE_TARGET:
     raise RuntimeError(
         "DATABASE_URL이 필요합니다. .env.example 또는 docker-compose.yml을 참고하세요."
     )
-
 st.set_page_config(
     page_title="StylePick AI",
     page_icon="✨",
@@ -423,32 +425,82 @@ st.markdown(
 
 @st.cache_data
 def get_products() -> pd.DataFrame:
+    from src.catalog import load_products
+
     return load_products(PRODUCT_PATH)
 
 
-@st.cache_resource(show_spinner="데이터베이스 연결을 준비하고 있어요...")
-def get_database(database_url: str) -> StoreDatabase:
-    """Initialize the schema and catalog once per app process, not per click."""
-    cached_database = StoreDatabase(database_url)
-    cached_database.seed_products(get_products())
+def build_database(database_url: str) -> StoreDatabase:
+    """Connect quickly in production; initialize local and test databases."""
+    is_production = os.environ.get("APP_ENV", "development").lower() == "production"
+    cached_database = StoreDatabase(
+        database_url,
+        initialize_schema=not is_production,
+    )
+    if not is_production:
+        cached_database.seed_products(get_products())
+        if os.environ.get("DEMO_MODE", "true").lower() == "true":
+            cached_database.ensure_demo_user()
     cached_database.catalog_snapshot = cached_database.load_products()
-    if os.environ.get("DEMO_MODE", "true").lower() == "true":
-        cached_database.ensure_demo_user()
     return cached_database
 
 
-try:
-    database = get_database(DATABASE_TARGET)
-except Exception:
-    if os.environ.get("APP_ENV", "development").lower() == "production":
-        logging.exception("StylePick database initialization failed")
-        st.error(
-            "서비스 데이터베이스에 연결하지 못했습니다. "
-            "잠시 후 다시 시도해 주세요.",
-            icon="🛠️",
-        )
-        st.stop()
-    raise
+def start_daemon_future(
+    target,
+    *args,
+    thread_name: str,
+    delay_seconds: float = 0,
+) -> Future:
+    future = Future()
+
+    def run() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            future.set_result(target(*args))
+        except BaseException as error:
+            future.set_exception(error)
+
+    worker = Thread(target=run, name=thread_name, daemon=True)
+    if delay_seconds > 0:
+        timer = Timer(delay_seconds, worker.start)
+        timer.daemon = True
+        timer.start()
+    else:
+        worker.start()
+    return future
+
+
+@st.cache_resource(show_spinner=False)
+def get_database_future(database_url: str) -> Future:
+    return start_daemon_future(
+        build_database,
+        database_url,
+        thread_name="stylepick-database",
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_database_sync(database_url: str) -> StoreDatabase:
+    return build_database(database_url)
+
+
+class LazyDatabase:
+    """Delay waiting for the remote DB until an authentication action needs it."""
+
+    def __init__(self, future: Future) -> None:
+        self.future = future
+
+    def __getattr__(self, name: str):
+        return getattr(self.future.result(), name)
+
+
+if os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") == "1":
+    database_future = Future()
+    database_future.set_result(get_database_sync(DATABASE_TARGET))
+else:
+    database_future = get_database_future(DATABASE_TARGET)
+database = LazyDatabase(database_future)
 RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
 
 
@@ -470,13 +522,39 @@ def get_storefront_snapshot(
     return _database.load_storefront_snapshot(user_id)
 
 
-@st.cache_resource
-def get_recommendation_model(
+@st.cache_resource(show_spinner=False)
+def get_recommendation_model_future(
     backend: str,
     catalog_fingerprint: tuple,
-    _products: pd.DataFrame,
+) -> Future:
+    """Load the recommender while the visitor uses the authentication screen."""
+    return start_daemon_future(
+        build_recommendation_model,
+        backend,
+        thread_name="stylepick-recommender",
+        delay_seconds=0.75,
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_recommendation_model_sync(
+    backend: str,
+    catalog_fingerprint: tuple,
 ):
-    return fit_recommender(_products, backend=backend)
+    return build_recommendation_model(backend)
+
+
+def build_recommendation_model(backend: str):
+    from src.catalog import load_products
+    from src.recommender import fit_recommender
+
+    return fit_recommender(load_products(PRODUCT_PATH), backend=backend)
+
+
+def rank_products(**kwargs) -> pd.DataFrame:
+    from src.recommender import recommend
+
+    return recommend(**kwargs)
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -548,6 +626,11 @@ def login_user(user: dict) -> None:
     st.session_state.current_user = user
     st.session_state.loaded_user_id = None
     st.session_state.last_order = None
+    st.session_state.storefront_snapshot_future = start_daemon_future(
+        database.load_storefront_snapshot,
+        int(user["id"]),
+        thread_name=f"stylepick-storefront-{int(user['id'])}",
+    )
 
 
 def submit_login() -> None:
@@ -597,9 +680,17 @@ def logout_user() -> None:
         del st.session_state[key]
 
 
+def wait_for_pending_cart_writes() -> None:
+    pending_writes = list(st.session_state.get("pending_cart_writes", []))
+    st.session_state.pending_cart_writes = []
+    for pending_write in pending_writes:
+        pending_write.result()
+
+
 def delete_current_user() -> None:
     st.session_state.pop("delete_account_error", None)
     try:
+        wait_for_pending_cart_writes()
         database.delete_user(
             int(st.session_state.user_id),
             st.session_state.get("delete_account_password", ""),
@@ -670,6 +761,63 @@ def check_signup_nickname_availability() -> None:
 def format_signup_phone() -> None:
     st.session_state.signup_phone = format_phone_input(
         st.session_state.get("signup_phone", "")
+    )
+
+
+def enable_live_phone_format() -> None:
+    """Add client-side formatting while keeping server-side validation authoritative."""
+    st.iframe(
+        """
+        <script>
+        (() => {
+          const parentDocument = window.parent.document;
+          const formatPhone = (rawValue) => {
+            const digits = rawValue.replace(/\\D/g, "").slice(0, 11);
+            if (digits.length <= 3) return digits;
+            if (digits.length <= 7) {
+              return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+            }
+            return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+          };
+          const attachFormatter = () => {
+            const input = parentDocument.querySelector(
+              'input[aria-label="전화번호"]'
+            );
+            if (!input || input.dataset.stylepickPhoneFormatter === "1") {
+              return Boolean(input);
+            }
+            input.dataset.stylepickPhoneFormatter = "1";
+            input.addEventListener("input", () => {
+              const formatted = formatPhone(input.value);
+              if (formatted === input.value) return;
+              const valueSetter = Object.getOwnPropertyDescriptor(
+                window.parent.HTMLInputElement.prototype,
+                "value"
+              ).set;
+              valueSetter.call(input, formatted);
+              input.dispatchEvent(
+                new window.parent.Event("input", { bubbles: true })
+              );
+              input.setSelectionRange(formatted.length, formatted.length);
+            });
+            return true;
+          };
+          if (!attachFormatter()) {
+            const observer = new MutationObserver(() => {
+              if (attachFormatter()) observer.disconnect();
+            });
+            observer.observe(parentDocument.body, {
+              childList: true,
+              subtree: true
+            });
+            window.setTimeout(() => observer.disconnect(), 10000);
+          }
+        })();
+        </script>
+        """,
+        height=1,
+        width=1,
+        tab_index=-1,
     )
 
 
@@ -796,6 +944,7 @@ def render_auth() -> None:
                 max_chars=20,
                 on_change=format_signup_phone,
             )
+            enable_live_phone_format()
             st.text_input(
                 "비밀번호",
                 type="password",
@@ -843,6 +992,52 @@ def initialize_state(snapshot: dict) -> None:
     st.session_state.loaded_user_id = user_id
 
 
+def empty_storefront_snapshot(user: dict, max_price: int) -> dict:
+    """Render the storefront immediately while remote user state finishes loading."""
+    return {
+        "profile": {
+            "nickname": user["nickname"],
+            "interests": [],
+            "budget": (0, max_price),
+        },
+        "favorites": set(),
+        "cart": {},
+        "behavior_summary": {},
+        "behavior_weights": {},
+        "trend_scores": {},
+        "purchased_ids": set(),
+        "order_history": [],
+    }
+
+
+@st.fragment(run_every=0.25)
+def refresh_storefront_snapshot() -> None:
+    future = st.session_state.get("storefront_snapshot_future")
+    if future is not None and future.done():
+        st.session_state.storefront_snapshot_ready = future.result()
+        st.session_state.pop("storefront_snapshot_future", None)
+        st.session_state.loaded_user_id = None
+        st.rerun()
+
+
+def initial_storefront_snapshot(user: dict, max_price: int) -> dict:
+    ready_snapshot = st.session_state.pop("storefront_snapshot_ready", None)
+    if ready_snapshot is not None:
+        return ready_snapshot
+    future = st.session_state.get("storefront_snapshot_future")
+    if future is None:
+        return get_storefront_snapshot(
+            DATABASE_TARGET,
+            int(st.session_state.user_id),
+            database,
+        )
+    if future.done():
+        st.session_state.pop("storefront_snapshot_future", None)
+        return future.result()
+    refresh_storefront_snapshot()
+    return empty_storefront_snapshot(user, max_price)
+
+
 def toggle_favorite(product_id: str) -> None:
     added = database.toggle_favorite(
         int(st.session_state.user_id),
@@ -859,6 +1054,7 @@ def toggle_favorite(product_id: str) -> None:
 
 def add_to_cart(product_id: str) -> None:
     try:
+        wait_for_pending_cart_writes()
         quantity = database.add_to_cart(
             int(st.session_state.user_id),
             product_id,
@@ -871,6 +1067,7 @@ def add_to_cart(product_id: str) -> None:
 
 
 def remove_from_cart(product_id: str) -> None:
+    wait_for_pending_cart_writes()
     database.remove_cart_item(
         int(st.session_state.user_id),
         product_id,
@@ -882,6 +1079,7 @@ def remove_from_cart(product_id: str) -> None:
 def complete_order() -> None:
     st.session_state.pop("checkout_error", None)
     try:
+        wait_for_pending_cart_writes()
         order = database.create_order(
             int(st.session_state.user_id),
             st.session_state.session_id,
@@ -900,40 +1098,118 @@ def reset_last_order() -> None:
     st.session_state.last_order = None
 
 
-@st.dialog("상품 상세")
-def product_detail(product_id: str) -> None:
+def open_product_detail(product_id: str, reason: str | None = None) -> None:
+    st.session_state.selected_product_id = product_id
+    st.session_state.selected_product_reason = reason
+    database.log_behavior_async(
+        int(st.session_state.user_id),
+        st.session_state.session_id,
+        product_id,
+        "VIEW",
+    )
+
+
+def close_product_detail() -> None:
+    st.session_state.selected_product_id = None
+    st.session_state.selected_product_reason = None
+    st.session_state.pop("detail_order", None)
+
+
+def buy_product_now(product_id: str) -> None:
+    st.session_state.pop("detail_order_error", None)
+    try:
+        wait_for_pending_cart_writes()
+        quantity = int(
+            st.session_state.get(f"detail_quantity_{product_id}", 1)
+        )
+        order = database.create_product_order(
+            int(st.session_state.user_id),
+            st.session_state.session_id,
+            product_id,
+            quantity,
+        )
+        st.session_state.detail_order = order
+        st.session_state.order_history = [
+            order,
+            *st.session_state.get("order_history", []),
+        ][:5]
+        st.session_state.purchased_ids.add(product_id)
+    except ValueError as error:
+        st.session_state.detail_order_error = str(error)
+
+
+def render_product_detail_page(product_id: str) -> None:
     product = products.loc[products["id"] == product_id].iloc[0]
-    st.markdown(
-        f"<div style='font-size:5rem;text-align:center'>{product['emoji']}</div>",
-        unsafe_allow_html=True,
+    st.button(
+        "← 쇼핑으로 돌아가기",
+        key="detail_back",
+        on_click=close_product_detail,
     )
-    st.subheader(product["name"])
-    st.caption(
-        f"{product['brand']} · {product['category']} · ⭐ {product['rating']}"
-    )
-    st.write(product["description"])
-    st.metric("판매가", f"{int(product['price']):,}원")
-    st.caption(f"현재 재고: {int(product['stock'])}개")
-    left, right = st.columns(2)
+    visual_col, info_col = st.columns([1, 1.15], gap="large")
+    with visual_col:
+        st.markdown(
+            f"""
+            <div class="product-card" style="min-height:360px;display:grid;place-items:center">
+              <div style="font-size:9rem">{product['emoji']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with info_col:
+        st.caption(
+            f"{product['brand']} · {product['category']} · ⭐ {product['rating']}"
+        )
+        st.title(product["name"])
+        st.write(product["description"])
+        if reason := st.session_state.get("selected_product_reason"):
+            st.success(f"✨ {reason}")
+        st.markdown(f"**상품 태그** · {product['tags']}")
+        price_col, stock_col = st.columns(2)
+        price_col.metric("판매가", f"{int(product['price']):,}원")
+        stock_col.metric("현재 재고", f"{int(product['stock'])}개")
+        st.number_input(
+            "구매 수량",
+            min_value=1,
+            max_value=min(10, int(product["stock"])),
+            value=1,
+            key=f"detail_quantity_{product_id}",
+        )
+
     favorite_label = (
         "찜 해제" if product_id in st.session_state.favorites else "♡ 찜하기"
     )
-    left.button(
+    favorite_col, cart_col, buy_col = st.columns(3)
+    favorite_col.button(
         favorite_label,
-        key=f"dialog_fav_{product_id}",
+        key=f"detail_favorite_{product_id}",
         width="stretch",
         on_click=toggle_favorite,
         args=(product_id,),
     )
-    right.button(
+    cart_col.button(
         "품절" if int(product["stock"]) <= 0 else "장바구니 담기",
-        key=f"dialog_cart_{product_id}",
+        key=f"detail_cart_{product_id}",
         type="primary",
         width="stretch",
         disabled=int(product["stock"]) <= 0,
         on_click=add_to_cart,
         args=(product_id,),
     )
+    buy_col.button(
+        "바로 모의결제",
+        key=f"detail_buy_{product_id}",
+        width="stretch",
+        disabled=int(product["stock"]) <= 0,
+        on_click=buy_product_now,
+        args=(product_id,),
+    )
+    if detail_order := st.session_state.get("detail_order"):
+        st.success(
+            f"모의 주문 {detail_order['order_id']} 완료 · "
+            f"{detail_order['total']:,}원"
+        )
+    if detail_error := st.session_state.get("detail_order_error"):
+        st.error(detail_error)
 
 
 def product_card(product: pd.Series, key_prefix: str, reason: str | None = None) -> None:
@@ -963,18 +1239,13 @@ def product_card(product: pd.Series, key_prefix: str, reason: str | None = None)
         unsafe_allow_html=True,
     )
     detail_col, favorite_col, cart_col = st.columns([1, 1, 1])
-    if detail_col.button(
+    detail_col.button(
         "상세",
         key=f"{key_prefix}_detail_{product['id']}",
         width="stretch",
-    ):
-        database.log_behavior(
-            int(st.session_state.user_id),
-            st.session_state.session_id,
-            str(product["id"]),
-            "VIEW",
-        )
-        product_detail(str(product["id"]))
+        on_click=open_product_detail,
+        args=(str(product["id"]), reason),
+    )
     favorite_icon = "♥" if product["id"] in st.session_state.favorites else "♡"
     favorite_col.button(
         favorite_icon,
@@ -1033,31 +1304,52 @@ def section_heading(kicker: str, title: str, description: str) -> None:
     )
 
 
-# Warm the catalog and E5 model before showing authentication. Render cold-start
-# time may increase, but login and every later widget rerun stay on the fast path.
-products = get_database_products(DATABASE_TARGET, database)
-catalog_fingerprint = tuple(
-    products[["id", "name", "category", "description"]]
-    .astype(str)
-    .itertuples(index=False, name=None)
+# Load the local catalog and E5 in a background thread. The main thread only
+# reads inexpensive file metadata before rendering authentication.
+catalog_stat = PRODUCT_PATH.stat()
+catalog_fingerprint = (
+    catalog_stat.st_mtime_ns,
+    catalog_stat.st_size,
 )
-model = get_recommendation_model(
-    RECOMMENDER_BACKEND,
-    catalog_fingerprint,
-    products,
-)
-CATEGORIES = sorted(products["category"].unique().tolist())
-MAX_PRICE = int(products["price"].max())
+if os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") == "1":
+    model_future = Future()
+    model_future.set_result(
+        get_recommendation_model_sync(
+            RECOMMENDER_BACKEND,
+            catalog_fingerprint,
+        )
+    )
+else:
+    model_future = get_recommendation_model_future(
+        RECOMMENDER_BACKEND,
+        catalog_fingerprint,
+    )
 
 initialize_auth()
 if not st.session_state.user_id:
     render_auth()
     st.stop()
 
-storefront_snapshot = get_storefront_snapshot(
-    DATABASE_TARGET,
-    int(st.session_state.user_id),
-    database,
+try:
+    database = database_future.result()
+except Exception:
+    if os.environ.get("APP_ENV", "development").lower() == "production":
+        logging.exception("StylePick database initialization failed")
+        st.error(
+            "서비스 데이터베이스에 연결하지 못했습니다. "
+            "잠시 후 다시 시도해 주세요.",
+            icon="🛠️",
+        )
+        st.stop()
+    raise
+
+products = get_database_products(DATABASE_TARGET, database)
+CATEGORIES = sorted(products["category"].unique().tolist())
+MAX_PRICE = int(products["price"].max())
+model = model_future.result()
+storefront_snapshot = initial_storefront_snapshot(
+    st.session_state.current_user,
+    MAX_PRICE,
 )
 initialize_state(storefront_snapshot)
 current_user = st.session_state.get("current_user")
@@ -1071,6 +1363,9 @@ if current_user is None:
 behavior_summary = st.session_state.behavior_summary
 if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
+if selected_product_id := st.session_state.get("selected_product_id"):
+    render_product_detail_page(str(selected_product_id))
+    st.stop()
 
 with st.sidebar:
     st.caption(f"로그인: {current_user['email']}")
@@ -1135,7 +1430,7 @@ behavior_weights = st.session_state.behavior_weights
 trend_scores = st.session_state.trend_scores
 purchased_ids = st.session_state.purchased_ids
 budget_min, budget_max = st.session_state.budget
-base_recommendations = recommend(
+base_recommendations = rank_products(
     products=products,
     model=model,
     interests=list(st.session_state.interests),
@@ -1303,7 +1598,7 @@ with recommend_tab:
         placeholder="예: 비 오는 날 가볍게 달릴 때 입을 옷",
         key="recommendation_query",
     )
-    recommendations = recommend(
+    recommendations = rank_products(
         products=products,
         model=model,
         interests=list(st.session_state.interests),
@@ -1457,12 +1752,23 @@ with cart_tab:
                 label_visibility="collapsed",
             )
             if int(quantity) != int(st.session_state.cart[product_id]):
-                database.set_cart_quantity(
-                    int(st.session_state.user_id),
-                    product_id,
-                    int(quantity),
-                )
                 st.session_state.cart[product_id] = int(quantity)
+                pending_writes = [
+                    pending_write
+                    for pending_write in st.session_state.get(
+                        "pending_cart_writes",
+                        [],
+                    )
+                    if not pending_write.done()
+                ]
+                pending_writes.append(
+                    database.set_cart_quantity_async(
+                        int(st.session_state.user_id),
+                        product_id,
+                        int(quantity),
+                    )
+                )
+                st.session_state.pending_cart_writes = pending_writes
             line_total = int(item["price"]) * int(quantity)
             total += line_total
             price_col.write(f"**{line_total:,}원**")

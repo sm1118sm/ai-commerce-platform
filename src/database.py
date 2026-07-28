@@ -8,14 +8,17 @@ import json
 import os
 import re
 import unicodedata
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Lock, Thread, Timer
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 ACTION_WEIGHTS = {
@@ -241,7 +244,12 @@ def recency_weight(created_at: str, now: datetime | None = None) -> float:
 
 
 class StoreDatabase:
-    def __init__(self, target: str | Path) -> None:
+    def __init__(
+        self,
+        target: str | Path,
+        *,
+        initialize_schema: bool = True,
+    ) -> None:
         self.database_url = str(target)
         self.kind = database_kind(self.database_url)
         self.connection_args = (
@@ -251,7 +259,12 @@ class StoreDatabase:
         )
         self._mysql_pool = None
         self._mysql_pool_lock = Lock()
-        self.initialize()
+        self._cart_write_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="stylepick-cart-write",
+        )
+        if initialize_schema:
+            self.initialize()
 
     def _mysql_raw_connection(self):
         """Return a pooled MySQL connection to avoid a TLS handshake per query."""
@@ -269,9 +282,9 @@ class StoreDatabase:
                     self._mysql_pool = PooledDB(
                         creator=pymysql,
                         maxconnections=6,
-                        # Keep a second TLS connection ready for the asynchronous
-                        # login audit update and the storefront snapshot.
-                        mincached=2,
+                        # One cached connection avoids first-login contention.
+                        # Additional connections are created only when needed.
+                        mincached=1,
                         maxcached=4,
                         blocking=True,
                         ping=1,
@@ -376,6 +389,8 @@ class StoreDatabase:
             connection.executemany(upsert_sql, parameter_rows)
 
     def load_products(self) -> pd.DataFrame:
+        import pandas as pd
+
         with self.connect() as connection:
             rows = connection.execute(
                 """
@@ -519,11 +534,16 @@ class StoreDatabase:
             ):
                 raise ValueError("이메일 또는 비밀번호가 올바르지 않습니다.")
         last_login_at = datetime.now().isoformat(timespec="seconds")
-        Thread(
-            target=self._record_last_login,
+        # Do not compete with the storefront snapshot for a fresh remote
+        # connection. The audit write is best-effort and can safely follow the
+        # user-visible login transition.
+        audit_timer = Timer(
+            10.0,
+            self._record_last_login,
             args=(int(row["id"]), last_login_at),
-            daemon=True,
-        ).start()
+        )
+        audit_timer.daemon = True
+        audit_timer.start()
         return {
             "id": int(row["id"]),
             "email": row["email"],
@@ -1032,6 +1052,20 @@ class StoreDatabase:
                 ),
             )
 
+    def set_cart_quantity_async(
+        self,
+        user_id: int,
+        product_id: str,
+        quantity: int,
+    ) -> Future:
+        """Persist the latest visible cart quantity without blocking its UI."""
+        return self._cart_write_executor.submit(
+            self.set_cart_quantity,
+            int(user_id),
+            product_id,
+            int(quantity),
+        )
+
     def remove_cart_item(
         self,
         user_id: int,
@@ -1275,6 +1309,88 @@ class StoreDatabase:
         return {
             "order_id": order_id,
             "items": items,
+            "total": total,
+            "quantity": quantity,
+            "ordered_at": ordered_at,
+            "status": "PAID_DEMO",
+        }
+
+    def create_product_order(
+        self,
+        user_id: int,
+        session_id: str,
+        product_id: str,
+        quantity: int = 1,
+    ) -> dict:
+        """Create a demo buy-now order without changing the existing cart."""
+        quantity = int(quantity)
+        if not 1 <= quantity <= 10:
+            raise ValueError("수량은 1~10개만 선택할 수 있습니다.")
+        with self.connect() as connection:
+            product = connection.execute(
+                """
+                SELECT product_id, name, price, stock
+                FROM products
+                WHERE product_id = ?
+                """,
+                (product_id,),
+            ).fetchone()
+            if product is None:
+                raise ValueError("존재하지 않는 상품입니다.")
+            if quantity > int(product["stock"]):
+                raise ValueError(f"{product['name']}의 재고가 부족합니다.")
+
+            total = int(product["price"]) * quantity
+            ordered_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+            order_id = f"DEMO-{uuid4().hex[:8].upper()}"
+            connection.execute(
+                """
+                INSERT INTO user_orders(
+                    order_id, user_id, total, quantity, status, ordered_at
+                ) VALUES (?, ?, ?, ?, 'PAID_DEMO', ?)
+                """,
+                (order_id, int(user_id), total, quantity, ordered_at),
+            )
+            updated = connection.execute(
+                """
+                UPDATE products SET stock = stock - ?
+                WHERE product_id = ? AND stock >= ?
+                """,
+                (quantity, product_id, quantity),
+            )
+            if updated.rowcount != 1:
+                raise ValueError(f"{product['name']}의 재고가 부족합니다.")
+            connection.execute(
+                """
+                INSERT INTO order_items(
+                    order_id, product_id, product_name, quantity, unit_price
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    product_id,
+                    str(product["name"]),
+                    quantity,
+                    int(product["price"]),
+                ),
+            )
+            self._log_behavior(
+                connection,
+                int(user_id),
+                session_id,
+                product_id,
+                "PURCHASE",
+            )
+        return {
+            "order_id": order_id,
+            "items": [
+                {
+                    "product_id": product_id,
+                    "name": str(product["name"]),
+                    "quantity": quantity,
+                    "unit_price": int(product["price"]),
+                }
+            ],
             "total": total,
             "quantity": quantity,
             "ordered_at": ordered_at,
