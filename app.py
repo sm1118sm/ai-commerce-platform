@@ -107,18 +107,28 @@ st.markdown(
         padding-bottom: 6rem;
       }
       .block-container:has(.detail-page-marker) {
-        padding-top: 5.25rem;
+        position: fixed;
+        inset: 3rem 0 0;
+        z-index: 80;
+        max-width: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        box-sizing: border-box;
+        padding: 4.5rem max(1rem, calc((100vw - 1280px) / 2)) 2rem;
+        background:
+          radial-gradient(circle at 8% 0%, rgba(91,76,240,.08), transparent 26rem),
+          #f8f9fc;
       }
       .detail-page-marker {
         height: 0;
         overflow: hidden;
       }
       .st-key-detail_back_bar {
-        position: sticky;
+        position: fixed;
         top: 3.75rem;
+        left: max(1rem, calc((100vw - 1280px) / 2));
         z-index: 95;
         width: fit-content;
-        margin-bottom: .65rem;
         padding: .3rem;
         border: 1px solid rgba(229,231,235,.92);
         border-radius: 14px;
@@ -129,6 +139,24 @@ st.markdown(
       .st-key-detail_back_bar button {
         min-height: 40px;
         background: #fff;
+      }
+      .detail-product-visual {
+        min-height: 280px;
+        display: grid;
+        place-items: center;
+        margin-top: 0;
+      }
+      .detail-product-emoji {
+        font-size: clamp(6rem, 9vw, 7.5rem);
+        line-height: 1;
+      }
+      .detail-product-title {
+        margin: .35rem 0 .65rem;
+        font-size: clamp(2rem, 3.6vw, 3.25rem);
+        line-height: 1.08;
+        letter-spacing: -.045em;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
       }
       .store-header {
         display: flex;
@@ -475,8 +503,15 @@ st.markdown(
           padding: 4.75rem .8rem 7.4rem;
         }
         .block-container:has(.detail-page-marker) {
-          padding-top: 4.75rem;
+          padding-top: 4.35rem;
         }
+        .st-key-detail_back_bar {
+          top: 3.45rem;
+          left: .75rem;
+        }
+        .detail-product-visual { min-height: 220px; }
+        .detail-product-emoji { font-size: 5.75rem; }
+        .detail-product-title { font-size: 2rem; }
         .store-header {
           position: sticky;
           top: .45rem;
@@ -1413,16 +1448,32 @@ def render_product_detail_page(product_id: str) -> None:
               const scrollTargets = [
                 parentDocument.scrollingElement,
                 parentDocument.querySelector('[data-testid="stAppViewContainer"]'),
+                parentDocument.querySelector('[data-testid="stMain"]'),
+                parentDocument.querySelector('.stMain'),
                 parentDocument.querySelector('section.main')
               ].filter(Boolean);
               const moveToTop = () => {
                 parentWindow.scrollTo({ top: 0, left: 0, behavior: "auto" });
+                parentDocument.documentElement.scrollTop = 0;
+                parentDocument.body.scrollTop = 0;
                 scrollTargets.forEach((target) => {
                   target.scrollTo({ top: 0, left: 0, behavior: "auto" });
+                });
+                parentDocument.querySelectorAll("*").forEach((target) => {
+                  const style = parentWindow.getComputedStyle(target);
+                  if (
+                    target.scrollHeight > target.clientHeight &&
+                    ["auto", "scroll"].includes(style.overflowY)
+                  ) {
+                    target.scrollTop = 0;
+                  }
                 });
               };
               moveToTop();
               parentWindow.requestAnimationFrame(moveToTop);
+              [60, 160, 320].forEach((delay) => {
+                parentWindow.setTimeout(moveToTop, delay);
+              });
             })();
             </script>
             """,
@@ -1444,8 +1495,8 @@ def render_product_detail_page(product_id: str) -> None:
     with visual_col:
         st.markdown(
             f"""
-            <div class="product-card" style="min-height:360px;display:grid;place-items:center">
-              <div style="font-size:9rem">{product['emoji']}</div>
+            <div class="product-card detail-product-visual">
+              <div class="detail-product-emoji">{product['emoji']}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1454,7 +1505,10 @@ def render_product_detail_page(product_id: str) -> None:
         st.caption(
             f"{product['brand']} · {product['category']} · ⭐ {product['rating']}"
         )
-        st.title(product["name"])
+        st.markdown(
+            f'<h1 class="detail-product-title">{escape(str(product["name"]))}</h1>',
+            unsafe_allow_html=True,
+        )
         st.write(product["description"])
         if reason := st.session_state.get("selected_product_reason"):
             st.success(f"✨ {reason}")
