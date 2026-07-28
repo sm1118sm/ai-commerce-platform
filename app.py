@@ -1577,6 +1577,9 @@ def complete_order() -> None:
             *st.session_state.get("order_history", []),
         ][:5]
         st.session_state.cart = {}
+        st.session_state.checkout_notice = (
+            f"모의결제가 완료되었습니다. 결제 금액 {int(order['total']):,}원"
+        )
     except ValueError as error:
         st.session_state.checkout_error = str(error)
 
@@ -2413,6 +2416,19 @@ with st.container(key="store_header"):
                 st.caption(f"{quantity}개 · {line_total:,}원")
                 st.divider()
             st.markdown(f"**합계 {header_cart_total:,}원**")
+            st.button(
+                "장바구니 모의결제",
+                key="header_cart_checkout",
+                type="primary",
+                width="stretch",
+                on_click=complete_order,
+            )
+            st.caption("포트폴리오 시연용이며 실제 결제는 발생하지 않습니다.")
+
+if checkout_notice := st.session_state.pop("checkout_notice", None):
+    st.toast(checkout_notice, icon="✅")
+if checkout_error := st.session_state.pop("checkout_error", None):
+    st.error(checkout_error, icon="⚠️")
 
 st.markdown(
     f"""
@@ -2748,9 +2764,6 @@ with cart_tab:
             width="stretch",
             on_click=complete_order,
         )
-        if checkout_error := st.session_state.get("checkout_error"):
-            st.error(checkout_error)
-
     order_history = st.session_state.order_history
     if order_notice := st.session_state.pop("order_action_notice", None):
         st.success(order_notice)
