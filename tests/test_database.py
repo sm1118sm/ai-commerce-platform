@@ -285,6 +285,40 @@ class DatabaseTest(unittest.TestCase):
             direct_order["items"][0]["remaining_stock"],
             direct_stock_after,
         )
+        canceled = database.cancel_order(
+            user_id,
+            direct_order["order_id"],
+            "test-session",
+        )
+        self.assertEqual(canceled["status"], "CANCELED_DEMO")
+        self.assertEqual(canceled["restored_quantity"], 2)
+        self.assertEqual(
+            int(
+                database.load_products().loc[
+                    lambda frame: frame["id"] == "P001",
+                    "stock",
+                ].iloc[0]
+            ),
+            direct_stock_before,
+        )
+        self.assertEqual(
+            database.list_orders(user_id)[0]["status"],
+            "CANCELED_DEMO",
+        )
+        self.assertNotIn("P001", database.purchased_product_ids(user_id))
+        with self.assertRaisesRegex(ValueError, "이미 취소된 주문"):
+            database.cancel_order(
+                user_id,
+                direct_order["order_id"],
+                "test-session",
+            )
+        reordered_cart = database.reorder_to_cart(
+            user_id,
+            direct_order["order_id"],
+            "test-session",
+        )
+        self.assertEqual(reordered_cart, {"P001": 2})
+        self.assertEqual(database.load_cart(user_id), {"P001": 2})
 
     def test_users_are_isolated(self) -> None:
         database = self.database

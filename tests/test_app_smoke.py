@@ -258,6 +258,26 @@ class AppSmokeTest(unittest.TestCase):
                 f"{app.session_state['last_order']['total']:,}원",
                 rendered_markdown,
             )
+            order_id = app.session_state["last_order"]["order_id"]
+            next(
+                button for button in app.button
+                if button.key == f"cancel_order_{order_id}"
+            ).click().run()
+            self.assertFalse(app.exception)
+            self.assertIsNone(app.session_state["last_order"])
+            self.assertEqual(
+                app.session_state["order_history"][0]["status"],
+                "CANCELED_DEMO",
+            )
+            next(
+                button for button in app.button
+                if button.key == f"reorder_{order_id}"
+            ).click().run()
+            self.assertFalse(app.exception)
+            self.assertGreater(
+                sum(app.session_state["cart"].values()),
+                0,
+            )
 
     def test_product_detail_back_preserves_login(self) -> None:
         with patch.dict(

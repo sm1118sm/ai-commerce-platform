@@ -29,6 +29,7 @@ ACTION_WEIGHTS = {
     "CART_ADD": 5.0,
     "CART_REMOVE": -2.0,
     "PURCHASE": 8.0,
+    "PURCHASE_CANCEL": -8.0,
 }
 VALID_ACTIONS = set(ACTION_WEIGHTS)
 EMAIL_PATTERN = re.compile(
@@ -825,7 +826,7 @@ class StoreDatabase:
                     NULL, NULL, NULL
                 FROM order_items oi
                 JOIN user_orders o ON o.order_id = oi.order_id
-                WHERE o.user_id = ?
+                WHERE o.user_id = ? AND o.status <> 'CANCELED_DEMO'
                 GROUP BY oi.product_id
 
                 UNION ALL
@@ -1236,7 +1237,7 @@ class StoreDatabase:
                 SELECT DISTINCT oi.product_id
                 FROM order_items oi
                 JOIN user_orders o ON o.order_id = oi.order_id
-                WHERE o.user_id = ?
+                WHERE o.user_id = ? AND o.status <> 'CANCELED_DEMO'
                 """,
                 (int(user_id),),
             ).fetchall()
@@ -1454,6 +1455,149 @@ class StoreDatabase:
                     }
                 )
         return result
+
+    def cancel_order(
+        self,
+        user_id: int,
+        order_id: str,
+        session_id: str,
+    ) -> dict:
+        """Cancel an owned demo order and restore its stock atomically."""
+        with self.connect() as connection:
+            order = connection.execute(
+                """
+                SELECT order_id, status
+                FROM user_orders
+                WHERE order_id = ? AND user_id = ?
+                """,
+                (order_id, int(user_id)),
+            ).fetchone()
+            if order is None:
+                raise ValueError("주문 내역을 찾을 수 없습니다.")
+            if str(order["status"]) == "CANCELED_DEMO":
+                raise ValueError("이미 취소된 주문입니다.")
+            if str(order["status"]) != "PAID_DEMO":
+                raise ValueError("현재 상태에서는 주문을 취소할 수 없습니다.")
+
+            items = connection.execute(
+                """
+                SELECT product_id, product_name, quantity
+                FROM order_items
+                WHERE order_id = ?
+                ORDER BY id
+                """,
+                (order_id,),
+            ).fetchall()
+            updated = connection.execute(
+                """
+                UPDATE user_orders
+                SET status = 'CANCELED_DEMO'
+                WHERE order_id = ? AND user_id = ? AND status = 'PAID_DEMO'
+                """,
+                (order_id, int(user_id)),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("주문 상태가 변경되어 다시 확인해 주세요.")
+            for item in items:
+                product_id = str(item["product_id"])
+                quantity = int(item["quantity"])
+                connection.execute(
+                    """
+                    UPDATE products
+                    SET stock = stock + ?
+                    WHERE product_id = ?
+                    """,
+                    (quantity, product_id),
+                )
+                self._log_behavior(
+                    connection,
+                    int(user_id),
+                    session_id,
+                    product_id,
+                    "PURCHASE_CANCEL",
+                )
+        return {
+            "order_id": order_id,
+            "status": "CANCELED_DEMO",
+            "restored_quantity": sum(int(item["quantity"]) for item in items),
+        }
+
+    def reorder_to_cart(
+        self,
+        user_id: int,
+        order_id: str,
+        session_id: str,
+    ) -> dict[str, int]:
+        """Add all items from an owned order to the cart in one transaction."""
+        if self.kind == "mysql":
+            cart_sql = """
+                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    quantity = VALUES(quantity),
+                    updated_at = VALUES(updated_at)
+            """
+        else:
+            cart_sql = """
+                INSERT INTO user_cart(user_id, product_id, quantity, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (user_id, product_id) DO UPDATE SET
+                    quantity = EXCLUDED.quantity,
+                    updated_at = EXCLUDED.updated_at
+            """
+        with self.connect() as connection:
+            owned_order = connection.execute(
+                """
+                SELECT order_id
+                FROM user_orders
+                WHERE order_id = ? AND user_id = ?
+                """,
+                (order_id, int(user_id)),
+            ).fetchone()
+            if owned_order is None:
+                raise ValueError("주문 내역을 찾을 수 없습니다.")
+            rows = connection.execute(
+                """
+                SELECT
+                    oi.product_id, oi.product_name, oi.quantity, p.stock,
+                    COALESCE(c.quantity, 0) AS cart_quantity
+                FROM order_items oi
+                JOIN products p ON p.product_id = oi.product_id
+                LEFT JOIN user_cart c
+                    ON c.product_id = oi.product_id AND c.user_id = ?
+                WHERE oi.order_id = ?
+                ORDER BY oi.id
+                """,
+                (int(user_id), order_id),
+            ).fetchall()
+            if not rows:
+                raise ValueError("재주문할 상품이 없습니다.")
+
+            quantities: dict[str, int] = {}
+            for row in rows:
+                maximum = min(10, int(row["stock"]))
+                quantity = int(row["cart_quantity"]) + int(row["quantity"])
+                if quantity > maximum:
+                    raise ValueError(
+                        f"{row['product_name']}은 현재 최대 {maximum}개까지 "
+                        "장바구니에 담을 수 있습니다."
+                    )
+                quantities[str(row["product_id"])] = quantity
+
+            updated_at = datetime.now().isoformat(timespec="seconds")
+            for product_id, quantity in quantities.items():
+                connection.execute(
+                    cart_sql,
+                    (int(user_id), product_id, quantity, updated_at),
+                )
+                self._log_behavior(
+                    connection,
+                    int(user_id),
+                    session_id,
+                    product_id,
+                    "CART_ADD",
+                )
+        return quantities
 
     def behavior_summary(self, user_id: int) -> dict:
         with self.connect() as connection:
