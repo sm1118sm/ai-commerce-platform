@@ -1,4 +1,4 @@
-"""Evaluate text-retrieval backends on fixed Korean shopping intents."""
+"""Evaluate the TextCNN recommender on fixed Korean shopping intents."""
 
 from __future__ import annotations
 
@@ -6,13 +6,15 @@ import argparse
 import json
 import math
 from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from scripts.benchmark_dataset import V2_PATH, load_cases
 from src.catalog import load_products
 from src.recommender import fit_recommender, recommend
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def metrics(
@@ -150,8 +152,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--backend",
-        choices=["tfidf", "e5", "both"],
-        default="both",
+        choices=["cnn"],
+        default="cnn",
     )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument(
@@ -165,19 +167,12 @@ def main() -> None:
         help="사람 검수 전 초안을 참고용 평가에 포함합니다.",
     )
     args = parser.parse_args()
-    backends = ["tfidf", "e5"] if args.backend == "both" else [args.backend]
-    results = {
-        backend: evaluate(
-            backend,
-            args.top_k,
-            dataset=args.dataset,
-            include_draft=args.include_draft,
-        )
-        for backend in backends
-    }
-    if len(results) == 2:
-        improvement = results["e5"]["ndcg"] - results["tfidf"]["ndcg"]
-        print(f"\nE5 NDCG 개선폭: {improvement:+.3f}")
+    evaluate(
+        args.backend,
+        args.top_k,
+        dataset=args.dataset,
+        include_draft=args.include_draft,
+    )
 
 
 if __name__ == "__main__":

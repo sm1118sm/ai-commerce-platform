@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import perf_counter
 import unittest
 from pathlib import Path
 
@@ -107,6 +108,56 @@ class RecommenderTest(unittest.TestCase):
             result["recommendation_reason"].str.contains("최근 클릭").any()
         )
 
+    def test_two_users_receive_different_cnn_rankings(self) -> None:
+        electronics_user = recommend(
+            self.products,
+            self.model,
+            interests=[],
+            favorite_ids=set(),
+            budget_min=0,
+            budget_max=250_000,
+            top_n=8,
+            behavior_product_weights={"P001": 8.0, "P002": 5.0},
+        )
+        sports_user = recommend(
+            self.products,
+            self.model,
+            interests=[],
+            favorite_ids=set(),
+            budget_min=0,
+            budget_max=250_000,
+            top_n=8,
+            behavior_product_weights={"P024": 8.0, "P025": 5.0},
+        )
+        self.assertNotEqual(
+            electronics_user["id"].head(4).tolist(),
+            sports_user["id"].head(4).tolist(),
+        )
+        self.assertTrue(
+            (electronics_user.head(2)["category"] == "전자기기").all()
+        )
+        self.assertTrue(
+            (sports_user.head(2)["category"] == "스포츠").all()
+        )
+
+    def test_cnn_inference_is_under_two_seconds_for_five_runs(self) -> None:
+        elapsed: list[float] = []
+        for _ in range(5):
+            started = perf_counter()
+            recommend(
+                self.products,
+                self.model,
+                interests=["스포츠"],
+                favorite_ids=set(),
+                budget_min=0,
+                budget_max=250_000,
+                top_n=8,
+                behavior_product_weights={"P024": 8.0},
+                query_text="가벼운 러닝 운동 용품",
+            )
+            elapsed.append(perf_counter() - started)
+        self.assertLess(max(elapsed), 2.0)
+
     def test_negative_behavior_lowers_the_product_score(self) -> None:
         baseline = recommend(
             self.products,
@@ -136,14 +187,13 @@ class RecommenderTest(unittest.TestCase):
             0.2,
         )
 
-    def test_e5_reuses_catalog_vectors_for_known_user_signals(self) -> None:
+    def test_cnn_reuses_catalog_vectors_for_known_user_signals(self) -> None:
         class EncoderThatMustNotRun:
             def encode(self, *args, **kwargs):
                 raise AssertionError("known catalog signals must not be encoded")
 
         model = RecommendationModel(
-            backend="e5",
-            vectorizer=None,
+            backend="cnn",
             encoder=EncoderThatMustNotRun(),
             product_matrix=np.eye(len(self.products)),
         )
@@ -160,7 +210,7 @@ class RecommenderTest(unittest.TestCase):
         self.assertEqual(len(result), 8)
         self.assertNotIn("P001", result["id"].tolist())
 
-    def test_e5_encodes_only_an_arbitrary_search_query(self) -> None:
+    def test_cnn_encodes_only_an_arbitrary_search_query(self) -> None:
         vector_size = len(self.products)
 
         class CountingEncoder:
@@ -173,8 +223,7 @@ class RecommenderTest(unittest.TestCase):
 
         encoder = CountingEncoder()
         model = RecommendationModel(
-            backend="e5",
-            vectorizer=None,
+            backend="cnn",
             encoder=encoder,
             product_matrix=np.eye(len(self.products)),
         )

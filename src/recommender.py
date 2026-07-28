@@ -1,4 +1,4 @@
-"""Small, deterministic content-based recommendation engine."""
+"""Personalized TextCNN recommendation engine."""
 
 from __future__ import annotations
 
@@ -6,14 +6,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+
+from src.cnn_encoder import TextCnnEncoder
 
 
 @dataclass(frozen=True)
 class RecommendationModel:
     backend: str
-    vectorizer: TfidfVectorizer | None
     encoder: object | None
     product_matrix: object
 
@@ -37,62 +36,23 @@ def product_text(frame: pd.DataFrame) -> pd.Series:
 
 def fit_recommender(
     products: pd.DataFrame,
-    backend: str = "tfidf",
+    backend: str = "cnn",
 ) -> RecommendationModel:
-    """Fit the selected text retrieval backend on the product catalog."""
-    if backend == "e5":
-        from sentence_transformers import SentenceTransformer
-
-        encoder = SentenceTransformer("intfloat/multilingual-e5-small")
-        passages = [
-            f"passage: {text}" for text in product_text(products).tolist()
-        ]
-        matrix = encoder.encode(
-            passages,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
-        return RecommendationModel(
-            backend=backend,
-            vectorizer=None,
-            encoder=encoder,
-            product_matrix=matrix,
-        )
-    if backend != "tfidf":
+    """Load the trained TextCNN and encode the current product catalog."""
+    if backend != "cnn":
         raise ValueError(f"지원하지 않는 추천 백엔드입니다: {backend}")
-    vectorizer = TfidfVectorizer(
-        ngram_range=(1, 2),
-        min_df=1,
-        sublinear_tf=True,
+    encoder = TextCnnEncoder()
+    matrix = encoder.encode(
+        product_text(products).tolist(),
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+        show_progress_bar=False,
     )
-    matrix = vectorizer.fit_transform(product_text(products))
     return RecommendationModel(
         backend=backend,
-        vectorizer=vectorizer,
-        encoder=None,
+        encoder=encoder,
         product_matrix=matrix,
     )
-
-
-def _text_similarity(model: RecommendationModel, text: str) -> np.ndarray:
-    if not text.strip():
-        return np.zeros(model.product_matrix.shape[0])
-    if model.backend == "e5":
-        vector = model.encoder.encode(
-            [f"query: {text}"],
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )[0]
-        raw_scores = np.asarray(model.product_matrix @ vector)
-        minimum = float(raw_scores.min())
-        maximum = float(raw_scores.max())
-        if maximum == minimum:
-            return np.ones(len(raw_scores))
-        return (raw_scores - minimum) / (maximum - minimum)
-    vector = model.vectorizer.transform([text])
-    return cosine_similarity(vector, model.product_matrix).ravel()
 
 
 def _normalized_matrix_similarity(
@@ -107,18 +67,18 @@ def _normalized_matrix_similarity(
     return (raw_scores - minimum) / (maximum - minimum)
 
 
-def _e5_profile_similarity(
+def _cnn_profile_similarity(
     products: pd.DataFrame,
     model: RecommendationModel,
     interests: list[str],
     favorite_ids: set[str],
     query_text: str,
 ) -> np.ndarray:
-    """Build known-user vectors from cached product embeddings.
+    """Build a user vector from cached CNN product embeddings.
 
     Category and favorite signals already point at catalog products, so encoding
     their text again on every Streamlit rerun only adds CPU latency. Arbitrary
-    search text still goes through E5 once because it has no catalog vector.
+    search text goes through the same CNN encoder once.
     """
     matrix = np.asarray(model.product_matrix)
     vector_parts: list[np.ndarray] = []
@@ -141,7 +101,7 @@ def _e5_profile_similarity(
 
     if query_text.strip():
         query_vector = model.encoder.encode(
-            [f"query: {query_text.strip()}"],
+            [query_text.strip()],
             normalize_embeddings=True,
             convert_to_numpy=True,
             show_progress_bar=False,
@@ -162,7 +122,7 @@ def _e5_profile_similarity(
     return _normalized_matrix_similarity(model, profile_vector)
 
 
-def _e5_behavior_similarity(
+def _cnn_behavior_similarity(
     products: pd.DataFrame,
     model: RecommendationModel,
     positive_behavior: dict[str, float],
@@ -217,20 +177,13 @@ def recommend(
     behavior_product_weights = behavior_product_weights or {}
     trend_product_scores = trend_product_scores or {}
     purchased_ids = purchased_ids or set()
-    favorites = products[products["id"].isin(favorite_ids)]
-    interest_text = " ".join(interests * 3)
-    favorite_text = " ".join(product_text(favorites).tolist())
-    profile_text = f"{query_text} {interest_text} {favorite_text}".strip()
-    if model.backend == "e5":
-        content_score = _e5_profile_similarity(
-            products,
-            model,
-            interests,
-            favorite_ids,
-            query_text,
-        )
-    else:
-        content_score = _text_similarity(model, profile_text)
+    content_score = _cnn_profile_similarity(
+        products,
+        model,
+        interests,
+        favorite_ids,
+        query_text,
+    )
 
     positive_behavior = {
         product_id: score
@@ -242,23 +195,11 @@ def recommend(
         for product_id, score in behavior_product_weights.items()
         if score < 0
     }
-    behavior_parts: list[str] = []
-    for product_id, weight in positive_behavior.items():
-        matched = products[products["id"] == product_id]
-        if matched.empty:
-            continue
-        repetitions = max(1, min(8, int(round(weight))))
-        behavior_parts.extend(product_text(matched).tolist() * repetitions)
-    if model.backend == "e5":
-        behavior_score = _e5_behavior_similarity(
-            products,
-            model,
-            positive_behavior,
-        )
-    elif behavior_parts:
-        behavior_score = _text_similarity(model, " ".join(behavior_parts))
-    else:
-        behavior_score = np.zeros(len(products))
+    behavior_score = _cnn_behavior_similarity(
+        products,
+        model,
+        positive_behavior,
+    )
     negative_behavior_score = np.array(
         [
             min(1.0, abs(float(negative_behavior.get(product_id, 0))) / 5.0)

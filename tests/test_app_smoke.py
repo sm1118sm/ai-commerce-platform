@@ -36,7 +36,7 @@ class AppSmokeTest(unittest.TestCase):
             os.environ,
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
-                "RECOMMENDER_BACKEND": "tfidf",
+                "RECOMMENDER_BACKEND": "cnn",
                 "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
             clear=False,
@@ -57,7 +57,7 @@ class AppSmokeTest(unittest.TestCase):
             os.environ,
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
-                "RECOMMENDER_BACKEND": "tfidf",
+                "RECOMMENDER_BACKEND": "cnn",
                 "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
             clear=False,
@@ -148,7 +148,7 @@ class AppSmokeTest(unittest.TestCase):
             os.environ,
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
-                "RECOMMENDER_BACKEND": "tfidf",
+                "RECOMMENDER_BACKEND": "cnn",
                 "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
             clear=False,
@@ -231,7 +231,7 @@ class AppSmokeTest(unittest.TestCase):
             os.environ,
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
-                "RECOMMENDER_BACKEND": "tfidf",
+                "RECOMMENDER_BACKEND": "cnn",
                 "STYLEPICK_TEST_AUTOLOGIN": "1",
                 "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },

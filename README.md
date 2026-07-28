@@ -14,7 +14,7 @@
 - PBKDF2 비밀번호 해시, 로그인, 회원탈퇴
 - 선택 시 새로고침과 재방문에도 유지되는 2시간 보안 로그인
 - 회원별 찜, 장바구니, 모의 주문, 행동 로그
-- TF-IDF/E5와 사용자 행동을 결합한 하이브리드 추천
+- 딥러닝 TextCNN과 사용자 행동을 결합한 회원별 추천
 - 추천 상품별 설명과 신규 사용자를 위한 콜드 스타트 추천
 - 데스크톱·모바일 반응형 이커머스 UI
 - 로컬 MySQL과 Aiven 관리형 MySQL 지원
@@ -36,9 +36,9 @@ docker compose up -d --build
 - 회원 DB 확인: `http://localhost:8081`
 - 종료: `docker compose down`
 
-무료 호스팅과 빠른 시작을 위해 기본 추천 모델은 TF-IDF입니다.
-E5를 사용하려면 `.env.example`을 `.env`로 복사하고
-`RECOMMENDER_BACKEND=e5`로 변경하세요.
+추천 모델은 TextCNN 하나만 사용합니다. 학습된 약 68KB 모델을 NumPy로
+추론하므로 무료 호스팅에서도 별도의 GPU나 무거운 딥러닝 런타임이
+필요하지 않습니다.
 
 ## 데이터베이스
 
@@ -85,7 +85,7 @@ URI에는 DB 비밀번호가 포함되므로 README, GitHub Issue, 채팅 또는
 | 영역 | 기술 |
 | --- | --- |
 | 웹 | Streamlit, 반응형 CSS |
-| 추천 | Sentence Transformers E5, TF-IDF, 행동 가중치 |
+| 추천 | TextCNN, NumPy 추론, 회원별 행동 가중치 |
 | 데이터 | MySQL 8.4, PyMySQL, pandas |
 | 배포 | Streamlit Community Cloud, Render, GitHub Actions, Aiven |
 | 품질 | unittest, MySQL/PostgreSQL CI 통합 테스트 |
@@ -97,6 +97,20 @@ python -m unittest discover -s tests -v
 ```
 
 DB 통합 테스트에는 이름이 `_test`로 끝나는 별도 테스트 DB만 사용합니다.
+
+## CNN 모델 다시 학습
+
+상품 카탈로그를 변경한 뒤 다음 명령으로 TextCNN 모델 파일을 다시
+학습할 수 있습니다.
+
+```bash
+python scripts/train_textcnn.py
+```
+
+모델은 상품명·카테고리·설명·태그·브랜드와 210개 쇼핑 의도를 입력받아
+상품별 의미 특징을 학습합니다. 웹에서는 클릭 1점, 찜 4점, 장바구니 5점, 구매 8점으로 각
+회원의 CNN 취향 벡터를 별도로 만들기 때문에 같은 화면에서도 사용자마다
+추천 상품 순서가 달라집니다.
 
 ## 문서
 
