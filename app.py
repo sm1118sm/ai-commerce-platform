@@ -642,7 +642,7 @@ if os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") == "1":
 else:
     database_future = get_database_future(DATABASE_TARGET)
 database = LazyDatabase(database_future)
-RECOMMENDER_BACKEND = os.environ.get("RECOMMENDER_BACKEND", "tfidf").lower()
+RECOMMENDER_BACKEND = "cnn"
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1578,7 +1578,7 @@ def section_heading(kicker: str, title: str, description: str) -> None:
     )
 
 
-# Load the local catalog and E5 in a background thread. The main thread only
+# Load the local catalog and TextCNN in a background thread. The main thread only
 # reads inexpensive file metadata before rendering authentication.
 catalog_stat = PRODUCT_PATH.stat()
 catalog_fingerprint = (
@@ -1944,8 +1944,8 @@ with recommend_tab:
             "+ 평점×0.10 - 부정 행동 패널티"
         )
         st.write(
-            "TF-IDF가 상품명·카테고리·설명에서 중요한 단어를 학습하고, "
-            "사용자 취향 및 최근 행동 벡터와 상품 벡터의 코사인 유사도를 계산합니다. "
+            "딥러닝 TextCNN이 상품명·카테고리·설명·태그의 의미 특징을 학습하고, "
+            "사용자별 취향 및 최근 행동 벡터와 상품 CNN 벡터의 유사도를 계산합니다. "
             "행동은 클릭 1, 찜 4, 장바구니 5, 구매 8점이며 최근 행동을 더 크게 반영합니다. "
             "찜·장바구니에서 제거한 상품은 추천 점수가 낮아집니다."
         )

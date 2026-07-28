@@ -316,7 +316,7 @@ def main() -> int:
     reset_test_database(database)
     os.environ.update(
         DATABASE_URL=TEST_DATABASE_URL,
-        RECOMMENDER_BACKEND="tfidf",
+        RECOMMENDER_BACKEND="cnn",
         STYLEPICK_TEST_SYNC_STARTUP="1",
     )
 
