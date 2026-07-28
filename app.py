@@ -1869,6 +1869,27 @@ with st.sidebar:
     st.divider()
     st.metric("찜한 상품", len(st.session_state.favorites))
     st.metric("장바구니 수량", sum(st.session_state.cart.values()))
+    with st.expander("결제 내역"):
+        sidebar_orders = st.session_state.get("order_history", [])
+        if not sidebar_orders:
+            st.caption("아직 모의결제 내역이 없습니다.")
+        else:
+            for index, order in enumerate(sidebar_orders[:5]):
+                if index:
+                    st.divider()
+                st.markdown(f"**{int(order['total']):,}원**")
+                st.caption(
+                    f"{order['ordered_at']} · "
+                    f"총 {int(order['quantity'])}개"
+                )
+                item_names = ", ".join(
+                    str(item["name"])
+                    for item in order.get("items", [])
+                )
+                if item_names:
+                    st.caption(item_names)
+                st.code(str(order["order_id"]), language=None)
+            st.caption("최근 모의결제 5건까지 표시됩니다.")
     st.caption(
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
     )

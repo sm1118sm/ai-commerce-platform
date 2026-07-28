@@ -140,6 +140,10 @@ class AppSmokeTest(unittest.TestCase):
                 [tab.label for tab in app.tabs],
                 ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"],
             )
+            self.assertIn(
+                "결제 내역",
+                [expander.label for expander in app.expander],
+            )
 
     def test_login_and_logout_callbacks_change_screen_once(self) -> None:
         database = StoreDatabase(TEST_DATABASE_URL)
@@ -230,6 +234,13 @@ class AppSmokeTest(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertIsNotNone(app.session_state["last_order"])
             self.assertEqual(app.session_state["cart"], {})
+            rendered_markdown = " ".join(
+                markdown.value for markdown in app.markdown
+            )
+            self.assertIn(
+                f"{app.session_state['last_order']['total']:,}원",
+                rendered_markdown,
+            )
 
     def test_product_detail_back_preserves_login(self) -> None:
         with patch.dict(
