@@ -329,10 +329,12 @@ class DatabaseTest(unittest.TestCase):
             ),
             direct_stock_before,
         )
-        self.assertEqual(
-            database.list_orders(user_id)[0]["status"],
-            "CANCELED_DEMO",
+        canceled_order = next(
+            saved_order
+            for saved_order in database.list_orders(user_id)
+            if saved_order["order_id"] == direct_order["order_id"]
         )
+        self.assertEqual(canceled_order["status"], "CANCELED_DEMO")
         self.assertNotIn("P001", database.purchased_product_ids(user_id))
         self.assertEqual(database.list_product_reviews("P001"), [])
         with self.assertRaisesRegex(ValueError, "이미 취소된 주문"):
