@@ -181,7 +181,27 @@ class ButtonLatencyRun:
 
     def measure_profile_save(self, app: AppTest) -> None:
         for _ in range(REPEAT_COUNT):
-            self.click(app, "취향 저장", label="취향 저장")
+            self.text_input(app, "header_profile_password").input(
+                TEST_PASSWORD
+            )
+            self.click(
+                app,
+                "프로필 비밀번호 확인",
+                label="비밀번호 확인",
+            )
+            if not app.session_state["header_profile_verified"]:
+                raise AssertionError(
+                    "현재 비밀번호 확인 후 프로필 편집 화면이 열리지 않았습니다."
+                )
+            self.click(
+                app,
+                "계정 정보 저장",
+                label="계정 정보 저장",
+            )
+            if app.session_state["header_profile_verified"]:
+                raise AssertionError(
+                    "계정 정보 저장 후 비밀번호 확인 상태가 초기화되지 않았습니다."
+                )
 
     def measure_product_detail(self, app: AppTest) -> None:
         detail_key = f"shop_page_0_detail_{DETAIL_PRODUCT_ID}"
