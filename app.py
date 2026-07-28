@@ -1157,11 +1157,10 @@ def save_profile_settings() -> None:
 def verify_header_profile_password() -> None:
     st.session_state.pop("header_profile_error", None)
     try:
-        database.verify_user_password(
+        account = database.verify_user_password(
             int(st.session_state.user_id),
             st.session_state.get("header_profile_password", ""),
         )
-        account = database.get_user(int(st.session_state.user_id))
         st.session_state.header_profile_verified = True
         st.session_state.header_profile_password = ""
         st.session_state.header_profile_nickname = st.session_state.nickname
@@ -1187,22 +1186,14 @@ def save_header_account_settings() -> None:
             or "게스트"
         )
         phone = st.session_state.get("header_profile_phone", "")
-        interests = list(st.session_state.interests)
-        budget = tuple(st.session_state.budget)
-        database.save_profile(
+        database.update_account_settings(
             int(st.session_state.user_id),
             nickname,
-            interests,
-            budget,
-            phone_number=phone,
+            phone,
             new_password=new_password,
         )
         st.session_state.nickname = nickname
-        st.session_state.interests = interests
-        st.session_state.budget = budget
         st.session_state.profile_nickname = nickname
-        st.session_state.profile_interests = interests
-        st.session_state.profile_budget = budget
         st.session_state.current_user["nickname"] = nickname
         st.session_state.current_user["phone_number"] = phone
         st.session_state.header_new_password = ""
@@ -1210,7 +1201,6 @@ def save_header_account_settings() -> None:
         st.session_state.header_profile_verified = False
         st.session_state.header_profile_notice = "계정 정보가 저장되었습니다."
         get_cached_user.clear()
-        get_storefront_snapshot.clear()
     except ValueError as error:
         st.session_state.header_profile_error = str(error)
 
@@ -2176,14 +2166,19 @@ products = get_database_products(DATABASE_TARGET, database)
 CATEGORIES = sorted(products["category"].unique().tolist())
 MAX_PRICE = int(products["price"].max())
 model = model_future.result()
-storefront_snapshot = st.session_state.pop("storefront_snapshot_ready", None)
-if storefront_snapshot is None:
-    storefront_snapshot = get_storefront_snapshot(
-        DATABASE_TARGET,
-        int(st.session_state.user_id),
-        database,
+active_user_id = int(st.session_state.user_id)
+if st.session_state.get("loaded_user_id") != active_user_id:
+    storefront_snapshot = st.session_state.pop(
+        "storefront_snapshot_ready",
+        None,
     )
-initialize_state(storefront_snapshot)
+    if storefront_snapshot is None:
+        storefront_snapshot = get_storefront_snapshot(
+            DATABASE_TARGET,
+            active_user_id,
+            database,
+        )
+    initialize_state(storefront_snapshot)
 auth_page_slot.empty()
 current_user = st.session_state.get("current_user")
 if current_user is None:
