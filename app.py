@@ -520,7 +520,9 @@ st.markdown(
       @container store-header (max-width: 720px) {
         .st-key-store_header div[data-testid="stHorizontalBlock"] {
           display: grid !important;
-          grid-template-columns: 42px minmax(92px, 1fr) 64px 64px !important;
+          grid-template-columns:
+            42px minmax(82px, 1fr)
+            minmax(56px, 64px) minmax(56px, 64px) !important;
           align-items: center;
           gap: .35rem;
         }
@@ -665,7 +667,9 @@ st.markdown(
         }
         .st-key-store_header div[data-testid="stHorizontalBlock"] {
           display: grid !important;
-          grid-template-columns: 42px minmax(92px, 1fr) 64px 64px !important;
+          grid-template-columns:
+            42px minmax(82px, 1fr)
+            minmax(56px, 64px) minmax(56px, 64px) !important;
           align-items: center;
           gap: .35rem;
         }
