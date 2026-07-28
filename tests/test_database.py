@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.catalog import load_products
 from src.database import (
@@ -40,6 +41,16 @@ def reset_test_database(database: StoreDatabase) -> None:
 
 
 class DatabaseHelpersTest(unittest.TestCase):
+    def test_schema_initialization_can_be_skipped_for_existing_production_db(
+        self,
+    ) -> None:
+        with patch.object(StoreDatabase, "initialize") as initialize:
+            StoreDatabase(
+                "mysql://stylepick:secret@db.example.com/stylepick",
+                initialize_schema=False,
+            )
+        initialize.assert_not_called()
+
     def test_mysql_url_is_parsed(self) -> None:
         parsed = parse_mysql_url(
             "mysql://stylepick:p%40ss@db.example.com:3307/stylepick?ssl=true"
@@ -155,7 +166,8 @@ class DatabaseTest(unittest.TestCase):
             database.add_to_cart(user_id, "P002", "test-session"),
             2,
         )
-        self.assertEqual(database.load_cart(user_id), {"P002": 2})
+        database.set_cart_quantity_async(user_id, "P002", 3).result()
+        self.assertEqual(database.load_cart(user_id), {"P002": 3})
 
         order = database.create_order(user_id, "test-session")
         self.assertTrue(order["order_id"].startswith("DEMO-"))
@@ -165,7 +177,7 @@ class DatabaseTest(unittest.TestCase):
         )
         self.assertEqual(
             database.list_orders(user_id)[0]["total"],
-            product_price * 2,
+            product_price * 3,
         )
         self.assertIn("P002", database.purchased_product_ids(user_id))
         self.assertGreater(
@@ -181,6 +193,24 @@ class DatabaseTest(unittest.TestCase):
             snapshot["order_history"][0]["items"][0]["product_id"],
             "P002",
         )
+        direct_order = database.create_product_order(
+            user_id,
+            "test-session",
+            "P001",
+            2,
+        )
+        self.assertEqual(direct_order["quantity"], 2)
+        self.assertEqual(
+            direct_order["total"],
+            int(
+                self.products.loc[
+                    self.products["id"] == "P001",
+                    "price",
+                ].iloc[0]
+            )
+            * 2,
+        )
+        self.assertEqual(database.load_cart(user_id), {})
 
     def test_users_are_isolated(self) -> None:
         database = self.database

@@ -34,7 +34,10 @@ class AppSmokeTest(unittest.TestCase):
     def test_auth_screen_renders(self) -> None:
         with patch.dict(
             os.environ,
-            {"DATABASE_URL": TEST_DATABASE_URL},
+            {
+                "DATABASE_URL": TEST_DATABASE_URL,
+                "STYLEPICK_TEST_SYNC_STARTUP": "1",
+            },
             clear=False,
         ):
             os.environ.pop("STYLEPICK_TEST_AUTOLOGIN", None)
@@ -54,6 +57,7 @@ class AppSmokeTest(unittest.TestCase):
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
                 "RECOMMENDER_BACKEND": "tfidf",
+                "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
             clear=False,
         ):
@@ -118,6 +122,7 @@ class AppSmokeTest(unittest.TestCase):
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
                 "STYLEPICK_TEST_AUTOLOGIN": "1",
+                "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
         ):
             app = AppTest.from_file(
@@ -143,6 +148,7 @@ class AppSmokeTest(unittest.TestCase):
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
                 "RECOMMENDER_BACKEND": "tfidf",
+                "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
             clear=False,
         ):
@@ -200,6 +206,7 @@ class AppSmokeTest(unittest.TestCase):
             {
                 "DATABASE_URL": TEST_DATABASE_URL,
                 "STYLEPICK_TEST_AUTOLOGIN": "1",
+                "STYLEPICK_TEST_SYNC_STARTUP": "1",
             },
         ):
             app = AppTest.from_file(
