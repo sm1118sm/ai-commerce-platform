@@ -1450,6 +1450,75 @@ def reset_last_order() -> None:
     st.session_state.last_order = None
 
 
+ORDER_STATUS_LABELS = {
+    "PAID_DEMO": "결제 완료",
+    "PREPARING_DEMO": "상품 준비",
+    "SHIPPING_DEMO": "배송 중",
+    "DELIVERED_DEMO": "배송 완료",
+    "CANCELED_DEMO": "주문 취소",
+}
+
+
+def order_status_label(status: str) -> str:
+    return ORDER_STATUS_LABELS.get(str(status), str(status))
+
+
+def refresh_order_state() -> None:
+    """Refresh order-related session data after a committed mutation."""
+    user_id = int(st.session_state.user_id)
+    database.catalog_snapshot = database.load_products()
+    st.session_state.order_history = database.list_orders(user_id, limit=5)
+    st.session_state.cart = database.load_cart(user_id)
+    st.session_state.purchased_ids = database.purchased_product_ids(user_id)
+    st.session_state.behavior_summary = database.behavior_summary(user_id)
+    st.session_state.behavior_weights = database.user_behavior_weights(user_id)
+    get_database_products.clear()
+    get_storefront_snapshot.clear()
+    get_cached_purchased_ids.clear()
+    get_cached_order_history.clear()
+    get_cached_behavior_summary.clear()
+    get_cached_behavior_weights.clear()
+
+
+def cancel_demo_order(order_id: str) -> None:
+    st.session_state.pop("order_action_error", None)
+    try:
+        wait_for_pending_cart_writes()
+        database.cancel_order(
+            int(st.session_state.user_id),
+            order_id,
+            st.session_state.session_id,
+        )
+        refresh_order_state()
+        if (
+            st.session_state.get("last_order")
+            and st.session_state.last_order.get("order_id") == order_id
+        ):
+            st.session_state.last_order = None
+        st.session_state.order_action_notice = (
+            f"{order_id} 주문을 취소하고 재고를 복원했습니다."
+        )
+    except ValueError as error:
+        st.session_state.order_action_error = str(error)
+
+
+def reorder_demo_order(order_id: str) -> None:
+    st.session_state.pop("order_action_error", None)
+    try:
+        wait_for_pending_cart_writes()
+        database.reorder_to_cart(
+            int(st.session_state.user_id),
+            order_id,
+            st.session_state.session_id,
+        )
+        refresh_order_state()
+        st.session_state.order_action_notice = (
+            "현재 재고를 확인해 주문 상품을 장바구니에 다시 담았습니다."
+        )
+    except ValueError as error:
+        st.session_state.order_action_error = str(error)
+
+
 def open_product_detail(product_id: str, reason: str | None = None) -> None:
     st.session_state.selected_product_id = product_id
     st.session_state.selected_product_reason = reason
@@ -1927,7 +1996,8 @@ with st.sidebar:
                 st.markdown(f"**{int(order['total']):,}원**")
                 st.caption(
                     f"{order['ordered_at']} · "
-                    f"총 {int(order['quantity'])}개"
+                    f"총 {int(order['quantity'])}개 · "
+                    f"{order_status_label(order['status'])}"
                 )
                 item_names = ", ".join(
                     str(item["name"])
@@ -2331,15 +2401,49 @@ with cart_tab:
             st.error(checkout_error)
 
     order_history = st.session_state.order_history
+    if order_notice := st.session_state.pop("order_action_notice", None):
+        st.success(order_notice)
+    if order_error := st.session_state.get("order_action_error"):
+        st.error(order_error)
     if order_history:
-        with st.expander("최근 모의 주문 내역"):
-            for order in order_history:
-                names = ", ".join(item["name"] for item in order["items"])
-                st.write(
-                    f"**{order['order_id']}** · {order['total']:,}원 · "
-                    f"{order['ordered_at']}"
+        st.subheader("주문 관리")
+        for order in order_history:
+            status = str(order["status"])
+            status_label = order_status_label(status)
+            with st.expander(
+                f"{status_label} · {order['order_id']} · "
+                f"{int(order['total']):,}원"
+            ):
+                st.caption(
+                    f"주문 시각 {order['ordered_at']} · "
+                    f"총 {int(order['quantity'])}개"
                 )
-                st.caption(names)
+                for item in order["items"]:
+                    item_total = (
+                        int(item["unit_price"]) * int(item["quantity"])
+                    )
+                    st.write(
+                        f"**{item['name']}** · {int(item['quantity'])}개 · "
+                        f"{item_total:,}원"
+                    )
+                if status == "CANCELED_DEMO":
+                    st.info("취소가 완료되어 구매 수량만큼 재고가 복원됐습니다.")
+                cancel_col, reorder_col = st.columns(2)
+                cancel_col.button(
+                    "주문 취소",
+                    key=f"cancel_order_{order['order_id']}",
+                    disabled=status != "PAID_DEMO",
+                    width="stretch",
+                    on_click=cancel_demo_order,
+                    args=(str(order["order_id"]),),
+                )
+                reorder_col.button(
+                    "다시 담기",
+                    key=f"reorder_{order['order_id']}",
+                    width="stretch",
+                    on_click=reorder_demo_order,
+                    args=(str(order["order_id"]),),
+                )
 
 st.markdown(
     """
