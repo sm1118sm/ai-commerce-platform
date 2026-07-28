@@ -3,7 +3,9 @@
 사용자의 관심사·검색·클릭·찜·장바구니·구매 행동을 학습해 상품과 추천
 이유를 보여주는 설명 가능한 AI 이커머스 MVP입니다.
 
-**공개 사이트:** [StylePick AI 실행하기](https://ai-commerce-platform-5ovk.onrender.com/)
+**공개 사이트:** [StylePick AI 실행하기](https://ai-commerce-platform-nbtk9sjwlwpfozv2wpqjfa.streamlit.app/)
+
+**예비 사이트:** [Render에서 실행하기](https://ai-commerce-platform-5ovk.onrender.com/)
 
 ## 주요 기능
 
@@ -33,8 +35,9 @@ docker compose up -d --build
 - 회원 DB 확인: `http://localhost:8081`
 - 종료: `docker compose down`
 
-첫 빌드는 E5 추천 모델을 받아 수 분 걸릴 수 있습니다. 가벼운 실행이 필요하면
-`.env.example`을 `.env`로 복사하고 `RECOMMENDER_BACKEND=tfidf`로 변경하세요.
+무료 호스팅과 빠른 시작을 위해 기본 추천 모델은 TF-IDF입니다.
+E5를 사용하려면 `.env.example`을 `.env`로 복사하고
+`RECOMMENDER_BACKEND=e5`로 변경하세요.
 
 ## 데이터베이스
 
@@ -57,7 +60,7 @@ mysql://USER:URL_ENCODED_PASSWORD@HOST:PORT/defaultdb?ssl-mode=REQUIRED
 | 웹 | Streamlit, 반응형 CSS |
 | 추천 | Sentence Transformers E5, TF-IDF, 행동 가중치 |
 | 데이터 | MySQL 8.4, PyMySQL, pandas |
-| 배포 | Docker, GitHub Actions, Render, Aiven |
+| 배포 | Streamlit Community Cloud, Render, GitHub Actions, Aiven |
 | 품질 | unittest, MySQL/PostgreSQL CI 통합 테스트 |
 
 ## 테스트
