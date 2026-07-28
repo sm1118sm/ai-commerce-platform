@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
+from time import perf_counter
 from unittest.mock import patch
 
 from src.catalog import load_products
@@ -313,13 +314,21 @@ class DatabaseTest(unittest.TestCase):
         reviews = database.list_product_reviews("P001")
         self.assertEqual(len(reviews), 1)
         self.assertEqual(reviews[0]["rating"], 4)
+        cancel_started_at = perf_counter()
         canceled = database.cancel_order(
             user_id,
             direct_order["order_id"],
             "test-session",
         )
+        self.assertLess(perf_counter() - cancel_started_at, 2.0)
         self.assertEqual(canceled["status"], "CANCELED_DEMO")
         self.assertEqual(canceled["restored_quantity"], 2)
+        self.assertEqual(canceled["items"][0]["product_id"], "P001")
+        self.assertEqual(
+            canceled["items"][0]["remaining_stock"],
+            direct_stock_before,
+        )
+        self.assertFalse(canceled["items"][0]["still_purchased"])
         self.assertEqual(
             int(
                 database.load_products().loc[

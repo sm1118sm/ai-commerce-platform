@@ -1488,33 +1488,47 @@ def order_status_label(status: str) -> str:
     return ORDER_STATUS_LABELS.get(str(status), str(status))
 
 
-def refresh_order_state() -> None:
-    """Refresh order-related session data after a committed mutation."""
-    user_id = int(st.session_state.user_id)
-    database.catalog_snapshot = database.load_products()
-    st.session_state.order_history = database.list_orders(user_id, limit=5)
-    st.session_state.cart = database.load_cart(user_id)
-    st.session_state.purchased_ids = database.purchased_product_ids(user_id)
-    st.session_state.behavior_summary = database.behavior_summary(user_id)
-    st.session_state.behavior_weights = database.user_behavior_weights(user_id)
+def clear_order_caches() -> None:
+    """Invalidate remote snapshots without synchronously reloading them."""
     get_database_products.clear()
     get_storefront_snapshot.clear()
     get_cached_purchased_ids.clear()
     get_cached_order_history.clear()
     get_cached_behavior_summary.clear()
     get_cached_behavior_weights.clear()
+    get_cached_product_reviews.clear()
 
 
 def cancel_demo_order(order_id: str) -> None:
     st.session_state.pop("order_action_error", None)
     try:
         wait_for_pending_cart_writes()
-        database.cancel_order(
+        result = database.cancel_order(
             int(st.session_state.user_id),
             order_id,
             st.session_state.session_id,
         )
-        refresh_order_state()
+        for order in st.session_state.order_history:
+            if str(order["order_id"]) == order_id:
+                order["status"] = "CANCELED_DEMO"
+                break
+        catalog_snapshot = database.catalog_snapshot
+        for item in result["items"]:
+            product_id = str(item["product_id"])
+            catalog_snapshot.loc[
+                catalog_snapshot["id"] == product_id,
+                "stock",
+            ] = int(item["remaining_stock"])
+            if not item["still_purchased"]:
+                st.session_state.purchased_ids.discard(product_id)
+            st.session_state.behavior_weights[product_id] = (
+                st.session_state.behavior_weights.get(product_id, 0) - 8.0
+            )
+        st.session_state.behavior_summary["PURCHASE_CANCEL"] = (
+            st.session_state.behavior_summary.get("PURCHASE_CANCEL", 0)
+            + len(result["items"])
+        )
+        clear_order_caches()
         if (
             st.session_state.get("last_order")
             and st.session_state.last_order.get("order_id") == order_id
@@ -1531,12 +1545,21 @@ def reorder_demo_order(order_id: str) -> None:
     st.session_state.pop("order_action_error", None)
     try:
         wait_for_pending_cart_writes()
-        database.reorder_to_cart(
+        reordered = database.reorder_to_cart(
             int(st.session_state.user_id),
             order_id,
             st.session_state.session_id,
         )
-        refresh_order_state()
+        st.session_state.cart.update(reordered)
+        for product_id in reordered:
+            st.session_state.behavior_weights[product_id] = (
+                st.session_state.behavior_weights.get(product_id, 0) + 5.0
+            )
+        st.session_state.behavior_summary["CART_ADD"] = (
+            st.session_state.behavior_summary.get("CART_ADD", 0)
+            + len(reordered)
+        )
+        clear_order_caches()
         st.session_state.order_action_notice = (
             "현재 재고를 확인해 주문 상품을 장바구니에 다시 담았습니다."
         )
