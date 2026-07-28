@@ -206,10 +206,24 @@ st.markdown(
         gap: 0;
       }
       .st-key-store_header button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .2rem;
         min-height: 42px;
         border-radius: 999px;
         background: #f8fafc;
         white-space: nowrap;
+      }
+      .st-key-store_header button p {
+        margin: 0;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .st-key-store_header button svg {
+        flex: 0 0 auto;
       }
       .brand-lockup { display: flex; align-items: center; gap: .75rem; }
       .brand-mark {
@@ -585,20 +599,17 @@ st.markdown(
           padding: .52rem .58rem;
           border-radius: 15px;
         }
-        .st-key-store_header
-        > div[data-testid="stVerticalBlock"]
-        > div[data-testid="stHorizontalBlock"] {
-          display: grid;
-          grid-template-columns: 42px minmax(88px, 1fr) 52px 52px;
+        .st-key-store_header div[data-testid="stHorizontalBlock"] {
+          display: grid !important;
+          grid-template-columns: 42px minmax(92px, 1fr) 56px 56px !important;
           align-items: center;
           gap: .35rem;
         }
-        .st-key-store_header
-        > div[data-testid="stVerticalBlock"]
-        > div[data-testid="stHorizontalBlock"]
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
         > div[data-testid="stColumn"] {
           width: auto !important;
           min-width: 0 !important;
+          max-width: none !important;
           flex: none !important;
         }
         .st-key-store_header .brand-name,
@@ -2592,6 +2603,12 @@ with recommend_tab:
         st.info(
             "아직 취향 정보가 없어 예산 범위와 인기도를 이용한 콜드 스타트 추천입니다. "
             "관심 카테고리를 저장하거나 상품을 찜하면 개인화됩니다."
+        )
+    elif st.session_state.interests:
+        selected_interest_labels = ", ".join(st.session_state.interests)
+        st.success(
+            f"선택한 관심 카테고리({selected_interest_labels}) 안에서 "
+            "CNN이 개인별 추천 순서를 계산했습니다."
         )
     else:
         st.success(
