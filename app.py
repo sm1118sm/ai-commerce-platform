@@ -710,7 +710,24 @@ def remember_user_session(user_id: int) -> int:
     return claims.expires_at
 
 
+def get_remembered_user(user_id: int) -> dict:
+    """Retry one transient pooled-connection failure during cookie restore."""
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            return database.get_user(user_id)
+        except ValueError:
+            raise
+        except Exception as error:
+            last_error = error
+            if attempt == 0:
+                time.sleep(0.08)
+    assert last_error is not None
+    raise last_error
+
+
 def initialize_auth() -> None:
+    st.session_state.pop("auth_restore_error", None)
     if "session_id" not in st.session_state:
         st.session_state.session_id = f"session_{uuid4().hex[:12]}"
     if "user_id" not in st.session_state:
@@ -741,10 +758,15 @@ def initialize_auth() -> None:
                 st.session_state.auth_cookie_restore_blocked = True
             else:
                 try:
-                    user = database.get_user(claims.user_id)
+                    user = get_remembered_user(claims.user_id)
                 except ValueError:
                     queue_auth_cookie("clear")
                     st.session_state.auth_cookie_restore_blocked = True
+                except Exception:
+                    logging.exception(
+                        "StylePick remembered-login database lookup failed"
+                    )
+                    st.session_state.auth_restore_error = True
                 else:
                     login_user(
                         user,
@@ -1488,6 +1510,18 @@ else:
 
 initialize_auth()
 render_auth_cookie_action()
+if (
+    not st.session_state.user_id
+    and st.session_state.get("auth_restore_error")
+):
+    with auth_page_slot.container():
+        st.error(
+            "로그인 정보를 불러오는 중 데이터베이스 연결이 잠시 끊겼습니다. "
+            "아래 버튼을 눌러 다시 시도해 주세요.",
+            icon="🛠️",
+        )
+        st.button("다시 연결", type="primary", width="stretch")
+    st.stop()
 if not st.session_state.user_id:
     defer_auth_reveal = bool(
         AUTH_COOKIE_COMPONENT_ENABLED
