@@ -42,9 +42,10 @@ E5를 사용하려면 `.env.example`을 `.env`로 복사하고
 
 ## 데이터베이스
 
-별도 설정 없이 실행하면 Docker의 로컬 MySQL을 사용합니다. 로컬과 Render가
-같은 Aiven MySQL을 사용하게 하려면 Git에서 제외된 `.env`와 Render Secret의
-`DATABASE_URL`에 같은 Service URI를 설정합니다.
+별도 설정 없이 실행하면 Docker의 로컬 MySQL을 사용합니다. 로컬과 배포
+사이트가 같은 Aiven MySQL을 사용하게 하려면 Git에서 제외된 `.env`,
+Streamlit Secrets와 Render Environment의 `DATABASE_URL`에 같은 Service
+URI를 설정합니다.
 
 ```text
 mysql://USER:URL_ENCODED_PASSWORD@HOST:PORT/defaultdb?ssl-mode=REQUIRED
@@ -53,6 +54,31 @@ mysql://USER:URL_ENCODED_PASSWORD@HOST:PORT/defaultdb?ssl-mode=REQUIRED
 비밀번호 원문은 저장하지 않습니다. `admin_user_overview` 뷰에서는 가입
 이메일, 닉네임, 마스킹된 전화번호, 가입 시각만 확인할 수 있습니다.
 실제 DB 주소·비밀번호·`.env`는 GitHub에 올리지 마세요.
+
+### Aiven DB 연결 오류 해결
+
+다음 증상은 Aiven 무료 MySQL 서비스가 비활성화됐거나 Service URI가 변경된
+경우 발생할 수 있습니다.
+
+- `pymysql.err.InterfaceError` 또는 `OperationalError`
+- `Name or service not known`
+- 웹사이트에 `로그인 정보를 불러오는 중 데이터베이스 연결이 잠시
+  끊겼습니다`라는 안내가 표시됨
+
+해결 순서는 다음과 같습니다.
+
+1. [Aiven Console](https://console.aiven.io/)에서 MySQL 서비스를 연다.
+2. 서비스가 `POWERED OFF`이면 **Actions → Power on service**를 선택한다.
+3. 상태가 `RUNNING`이 될 때까지 기다린다.
+4. **Overview → Quick connect**에서 현재 Service URI를 확인한다.
+5. URI가 변경됐다면 로컬 `.env`와 Streamlit의 **Settings → Secrets**에
+   있는 `DATABASE_URL`을 새 URI로 교체한다.
+6. Streamlit Secrets를 저장하고 **Reboot app**을 실행한다.
+7. 웹사이트를 다시 열거나 오류 화면의 **다시 연결** 버튼을 누른다.
+
+Aiven 무료 서비스는 활동이 적으면 자동으로 꺼질 수 있습니다. 전체 Service
+URI에는 DB 비밀번호가 포함되므로 README, GitHub Issue, 채팅 또는 화면
+캡처에 노출하지 마세요.
 
 ## 기술 구성
 
