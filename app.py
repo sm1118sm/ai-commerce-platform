@@ -113,6 +113,23 @@ st.markdown(
         height: 0;
         overflow: hidden;
       }
+      .st-key-detail_back_bar {
+        position: sticky;
+        top: 3.75rem;
+        z-index: 95;
+        width: fit-content;
+        margin-bottom: .65rem;
+        padding: .3rem;
+        border: 1px solid rgba(229,231,235,.92);
+        border-radius: 14px;
+        background: rgba(255,255,255,.94);
+        box-shadow: 0 10px 30px rgba(15,23,42,.09);
+        backdrop-filter: blur(12px);
+      }
+      .st-key-detail_back_bar button {
+        min-height: 40px;
+        background: #fff;
+      }
       .store-header {
         display: flex;
         align-items: center;
@@ -1345,6 +1362,7 @@ def reset_last_order() -> None:
 def open_product_detail(product_id: str, reason: str | None = None) -> None:
     st.session_state.selected_product_id = product_id
     st.session_state.selected_product_reason = reason
+    st.session_state.detail_scroll_pending = True
     database.log_behavior_async(
         int(st.session_state.user_id),
         st.session_state.session_id,
@@ -1357,6 +1375,7 @@ def close_product_detail() -> None:
     st.session_state.selected_product_id = None
     st.session_state.selected_product_reason = None
     st.session_state.pop("detail_order", None)
+    st.session_state.pop("detail_scroll_pending", None)
 
 
 def buy_product_now(product_id: str) -> None:
@@ -1384,15 +1403,43 @@ def buy_product_now(product_id: str) -> None:
 
 def render_product_detail_page(product_id: str) -> None:
     product = products.loc[products["id"] == product_id].iloc[0]
+    if st.session_state.pop("detail_scroll_pending", False):
+        st.iframe(
+            """
+            <script>
+            (() => {
+              const parentWindow = window.parent;
+              const parentDocument = parentWindow.document;
+              const scrollTargets = [
+                parentDocument.scrollingElement,
+                parentDocument.querySelector('[data-testid="stAppViewContainer"]'),
+                parentDocument.querySelector('section.main')
+              ].filter(Boolean);
+              const moveToTop = () => {
+                parentWindow.scrollTo({ top: 0, left: 0, behavior: "auto" });
+                scrollTargets.forEach((target) => {
+                  target.scrollTo({ top: 0, left: 0, behavior: "auto" });
+                });
+              };
+              moveToTop();
+              parentWindow.requestAnimationFrame(moveToTop);
+            })();
+            </script>
+            """,
+            height=1,
+            width=1,
+            tab_index=-1,
+        )
     st.markdown(
         '<div class="detail-page-marker" aria-hidden="true"></div>',
         unsafe_allow_html=True,
     )
-    st.button(
-        "← 쇼핑으로 돌아가기",
-        key="detail_back",
-        on_click=close_product_detail,
-    )
+    with st.container(key="detail_back_bar"):
+        st.button(
+            "← 쇼핑으로 돌아가기",
+            key="detail_back",
+            on_click=close_product_detail,
+        )
     visual_col, info_col = st.columns([1, 1.15], gap="large")
     with visual_col:
         st.markdown(
