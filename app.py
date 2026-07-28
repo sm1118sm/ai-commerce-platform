@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from html import escape
+import json
 import logging
 import os
 from pathlib import Path
 from threading import Thread, Timer
+import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import streamlit as st
 
+from src.auth_session import create_session_token, verify_session_token
 from src.database import (
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
@@ -32,6 +35,11 @@ if not DATABASE_TARGET:
     raise RuntimeError(
         "DATABASE_URL이 필요합니다. .env.example 또는 docker-compose.yml을 참고하세요."
     )
+AUTH_COOKIE_NAME = "stylepick_session"
+AUTH_SESSION_TTL_SECONDS = 2 * 60 * 60
+AUTH_SESSION_SECRET = (
+    os.environ.get("SESSION_SECRET") or DATABASE_TARGET
+)
 st.set_page_config(
     page_title="StylePick AI",
     page_icon="✨",
@@ -82,8 +90,15 @@ st.markdown(
       }
       .block-container {
         max-width: 1280px;
-        padding-top: 1.25rem;
+        padding-top: 5rem;
         padding-bottom: 6rem;
+      }
+      .block-container:has(.detail-page-marker) {
+        padding-top: 5.25rem;
+      }
+      .detail-page-marker {
+        height: 0;
+        overflow: hidden;
       }
       .store-header {
         display: flex;
@@ -353,7 +368,10 @@ st.markdown(
 
       @media (max-width: 640px) {
         .block-container {
-          padding: .7rem .8rem 7.4rem;
+          padding: 4.75rem .8rem 7.4rem;
+        }
+        .block-container:has(.detail-page-marker) {
+          padding-top: 4.75rem;
         }
         .store-header {
           position: sticky;
@@ -617,16 +635,113 @@ def get_cached_order_history(
     return _database.list_orders(user_id, limit=limit)
 
 
+def queue_auth_cookie(
+    action: str,
+    token: str = "",
+    expires_at: int = 0,
+) -> None:
+    st.session_state.auth_cookie_action = (action, token, int(expires_at))
+
+
+def render_auth_cookie_action() -> None:
+    """Apply a queued login cookie without exposing its signed value in the UI."""
+    queued = st.session_state.pop("auth_cookie_action", None)
+    if not queued:
+        return
+    action, token, expires_at = queued
+    is_production = (
+        os.environ.get("APP_ENV", "development").lower() == "production"
+    )
+    secure = "; Secure" if is_production else ""
+    if action == "set":
+        max_age = max(1, int(expires_at) - int(time.time()))
+        cookie = (
+            f"{AUTH_COOKIE_NAME}={token}; Path=/; Max-Age={max_age}; "
+            f"SameSite=Lax{secure}"
+        )
+    else:
+        cookie = (
+            f"{AUTH_COOKIE_NAME}=; Path=/; Max-Age=0; "
+            f"SameSite=Lax{secure}"
+        )
+    cookie_literal = json.dumps(cookie)
+    st.iframe(
+        f"""
+        <script>
+          window.parent.document.cookie = {cookie_literal};
+        </script>
+        """,
+        height=1,
+        width=1,
+        tab_index=-1,
+    )
+
+
+def remember_user_session(user_id: int) -> int:
+    token, claims = create_session_token(
+        user_id,
+        AUTH_SESSION_SECRET,
+        ttl_seconds=AUTH_SESSION_TTL_SECONDS,
+    )
+    queue_auth_cookie("set", token, claims.expires_at)
+    return claims.expires_at
+
+
 def initialize_auth() -> None:
     if "session_id" not in st.session_state:
         st.session_state.session_id = f"session_{uuid4().hex[:12]}"
     if "user_id" not in st.session_state:
         st.session_state.user_id = None
-    if os.environ.get("STYLEPICK_TEST_AUTOLOGIN") == "1" and not st.session_state.user_id:
-        login_user(database.ensure_demo_user())
+    if st.session_state.user_id:
+        expires_at = int(st.session_state.get("auth_expires_at") or 0)
+        if expires_at and expires_at <= int(time.time()):
+            logout_user()
+        elif not expires_at:
+            st.session_state.auth_expires_at = remember_user_session(
+                int(st.session_state.user_id)
+            )
+    if (
+        not st.session_state.user_id
+        and not st.session_state.get("auth_cookie_restore_blocked")
+    ):
+        raw_token = st.context.cookies.get(AUTH_COOKIE_NAME)
+        if raw_token:
+            claims = verify_session_token(
+                raw_token,
+                AUTH_SESSION_SECRET,
+            )
+            if claims is None:
+                queue_auth_cookie("clear")
+                st.session_state.auth_cookie_restore_blocked = True
+            else:
+                try:
+                    user = database.get_user(claims.user_id)
+                except ValueError:
+                    queue_auth_cookie("clear")
+                    st.session_state.auth_cookie_restore_blocked = True
+                else:
+                    login_user(
+                        user,
+                        persist_session=False,
+                        expires_at=claims.expires_at,
+                    )
+    if (
+        os.environ.get("STYLEPICK_TEST_AUTOLOGIN") == "1"
+        and not st.session_state.user_id
+    ):
+        login_user(
+            database.ensure_demo_user(),
+            persist_session=False,
+            expires_at=int(time.time()) + AUTH_SESSION_TTL_SECONDS,
+        )
 
 
-def login_user(user: dict) -> None:
+def login_user(
+    user: dict,
+    *,
+    persist_session: bool = True,
+    expires_at: int | None = None,
+) -> None:
     user_id = int(user["id"])
     # Finish the small, single-query storefront snapshot before replacing the
     # authentication page. This produces one atomic screen transition instead
@@ -637,6 +752,12 @@ def login_user(user: dict) -> None:
     st.session_state.loaded_user_id = None
     st.session_state.last_order = None
     st.session_state.storefront_snapshot_ready = storefront_snapshot
+    if persist_session:
+        st.session_state.auth_expires_at = remember_user_session(user_id)
+    else:
+        st.session_state.auth_expires_at = int(
+            expires_at or (time.time() + AUTH_SESSION_TTL_SECONDS)
+        )
 
 
 def submit_login() -> None:
@@ -646,7 +767,10 @@ def submit_login() -> None:
             database.authenticate(
                 st.session_state.get("login_email", ""),
                 st.session_state.get("login_password", ""),
-            )
+            ),
+            persist_session=bool(
+                st.session_state.get("remember_login", True)
+            ),
         )
         st.session_state.auth_notice = (
             "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
@@ -684,6 +808,9 @@ def submit_signup() -> None:
 def logout_user() -> None:
     for key in list(st.session_state.keys()):
         del st.session_state[key]
+    st.session_state.user_id = None
+    st.session_state.auth_cookie_restore_blocked = True
+    queue_auth_cookie("clear")
 
 
 def wait_for_pending_cart_writes() -> None:
@@ -871,6 +998,15 @@ def render_auth() -> None:
                     key="login_email",
                 )
                 st.text_input("비밀번호", type="password", key="login_password")
+                st.checkbox(
+                    "로그인 유지",
+                    value=True,
+                    key="remember_login",
+                    help=(
+                        "새로고침하거나 브라우저를 닫았다 다시 접속해도 "
+                        "최대 2시간 동안 로그인 상태를 유지합니다."
+                    ),
+                )
                 st.form_submit_button(
                     "로그인",
                     type="primary",
@@ -1100,6 +1236,10 @@ def buy_product_now(product_id: str) -> None:
 
 def render_product_detail_page(product_id: str) -> None:
     product = products.loc[products["id"] == product_id].iloc[0]
+    st.markdown(
+        '<div class="detail-page-marker" aria-hidden="true"></div>',
+        unsafe_allow_html=True,
+    )
     st.button(
         "← 쇼핑으로 돌아가기",
         key="detail_back",
@@ -1286,6 +1426,7 @@ else:
     )
 
 initialize_auth()
+render_auth_cookie_action()
 if not st.session_state.user_id:
     with auth_page_slot.container():
         render_auth()
