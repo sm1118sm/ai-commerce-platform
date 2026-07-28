@@ -181,6 +181,12 @@ class ButtonLatencyRun:
 
     def measure_profile_save(self, app: AppTest) -> None:
         for _ in range(REPEAT_COUNT):
+            self.click(
+                app,
+                "AI 추천 취향 저장",
+                label="추천 취향 저장",
+            )
+        for _ in range(REPEAT_COUNT):
             self.text_input(app, "header_profile_password").input(
                 TEST_PASSWORD
             )
