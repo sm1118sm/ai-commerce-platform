@@ -2235,52 +2235,6 @@ with st.sidebar:
         "현재 비밀번호 확인 후 수정할 수 있습니다."
     )
     st.divider()
-    favorite_count = len(st.session_state.favorites)
-    with st.expander(f"찜한 상품 · {favorite_count}개"):
-        sidebar_favorites = products[
-            products["id"].isin(st.session_state.favorites)
-        ]
-        if sidebar_favorites.empty:
-            st.caption("찜한 상품이 없습니다.")
-        else:
-            for index, (_, item) in enumerate(
-                sidebar_favorites.iterrows()
-            ):
-                if index:
-                    st.divider()
-                st.markdown(f"{item['emoji']} **{item['name']}**")
-                st.caption(
-                    f"{int(item['price']):,}원 · "
-                    f"재고 {int(item['stock'])}개"
-                )
-                st.button(
-                    "구매 화면",
-                    key=f"sidebar_favorite_buy_{item['id']}",
-                    width="stretch",
-                    on_click=open_product_detail,
-                    args=(str(item["id"]), "찜한 상품에서 선택한 상품입니다."),
-                )
-
-    cart_count = sum(st.session_state.cart.values())
-    with st.expander(f"장바구니 수량 · {cart_count}개"):
-        sidebar_cart = products[
-            products["id"].isin(st.session_state.cart)
-        ]
-        if sidebar_cart.empty:
-            st.caption("장바구니가 비어 있습니다.")
-        else:
-            sidebar_cart_total = 0
-            for index, (_, item) in enumerate(sidebar_cart.iterrows()):
-                if index:
-                    st.divider()
-                quantity = int(st.session_state.cart[str(item["id"])])
-                line_total = int(item["price"]) * quantity
-                sidebar_cart_total += line_total
-                st.markdown(f"{item['emoji']} **{item['name']}**")
-                st.caption(f"{quantity}개 · {line_total:,}원")
-            st.divider()
-            st.markdown(f"**합계 {sidebar_cart_total:,}원**")
-
     sidebar_orders = st.session_state.get("order_history", [])
     with st.expander(f"결제 내역 · {len(sidebar_orders)}건"):
         if not sidebar_orders:
