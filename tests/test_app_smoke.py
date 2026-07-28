@@ -264,11 +264,31 @@ class AppSmokeTest(unittest.TestCase):
                 if button.key == f"cancel_order_{order_id}"
             ).click().run()
             self.assertFalse(app.exception)
+            self.assertEqual(
+                app.session_state["pending_cancel_order_id"],
+                order_id,
+            )
+            self.assertIsNotNone(app.session_state["last_order"])
+            self.assertEqual(
+                app.session_state["order_history"][0]["status"],
+                "PAID_DEMO",
+            )
+            next(
+                button for button in app.button
+                if button.key == f"confirm_cancel_{order_id}"
+            ).click().run()
+            self.assertFalse(app.exception)
             self.assertIsNone(app.session_state["last_order"])
             self.assertEqual(
                 app.session_state["order_history"][0]["status"],
                 "CANCELED_DEMO",
             )
+            canceled_button = next(
+                button for button in app.button
+                if button.key == f"cancel_complete_{order_id}"
+            )
+            self.assertEqual(canceled_button.label, "주문 취소 완료")
+            self.assertTrue(canceled_button.disabled)
             next(
                 button for button in app.button
                 if button.key == f"reorder_{order_id}"
