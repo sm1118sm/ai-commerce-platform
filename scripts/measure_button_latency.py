@@ -302,7 +302,11 @@ class ButtonLatencyRun:
                 key=cart_key,
                 record=False,
             )
-            self.click(app, "모의 주문 완료", label="모의 주문 완료")
+            self.click(
+                app,
+                "장바구니 모의결제",
+                key="header_cart_checkout",
+            )
             if app.session_state["last_order"] is None:
                 raise AssertionError("모의 주문 버튼이 주문 결과를 만들지 못했습니다.")
             self.click(app, "새 쇼핑 계속하기", label="새 쇼핑 계속하기")
