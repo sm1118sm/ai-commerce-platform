@@ -299,8 +299,11 @@ class AppSmokeTest(unittest.TestCase):
             original_current_user = dict(
                 app.session_state["current_user"]
             )
+            original_interests = list(app.session_state["interests"])
+            original_budget = tuple(app.session_state["budget"])
             original_cart = dict(app.session_state["cart"])
             original_favorites = set(app.session_state["favorites"])
+            app.session_state["header_profile_verified"] = True
             next(
                 button for button in app.button
                 if button.label == "상세"
@@ -327,6 +330,29 @@ class AppSmokeTest(unittest.TestCase):
             self.assertEqual(
                 dict(app.session_state["current_user"]),
                 original_current_user,
+            )
+            self.assertEqual(
+                list(app.session_state["interests"]),
+                original_interests,
+            )
+            self.assertEqual(
+                tuple(app.session_state["budget"]),
+                original_budget,
+            )
+            self.assertEqual(
+                app.session_state["profile_nickname"],
+                original_nickname,
+            )
+            self.assertEqual(
+                list(app.session_state["profile_interests"]),
+                original_interests,
+            )
+            self.assertEqual(
+                tuple(app.session_state["profile_budget"]),
+                original_budget,
+            )
+            self.assertFalse(
+                app.session_state["header_profile_verified"]
             )
             self.assertEqual(
                 dict(app.session_state["cart"]),

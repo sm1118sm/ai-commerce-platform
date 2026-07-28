@@ -189,6 +189,24 @@ st.markdown(
         box-shadow: 0 10px 35px rgba(15,23,42,.06);
         backdrop-filter: blur(14px);
       }
+      .st-key-store_header {
+        padding: .72rem 1rem;
+        margin-bottom: 1.1rem;
+        background: rgba(255,255,255,.9);
+        border: 1px solid rgba(229,231,235,.9);
+        border-radius: 18px;
+        box-shadow: 0 10px 35px rgba(15,23,42,.06);
+        backdrop-filter: blur(14px);
+      }
+      .st-key-store_header > div[data-testid="stVerticalBlock"] {
+        gap: 0;
+      }
+      .st-key-store_header button {
+        min-height: 42px;
+        border-radius: 999px;
+        background: #f8fafc;
+        white-space: nowrap;
+      }
       .brand-lockup { display: flex; align-items: center; gap: .75rem; }
       .brand-mark {
         display: grid;
@@ -555,6 +573,22 @@ st.markdown(
           z-index: 90;
           padding: .58rem .65rem;
           border-radius: 15px;
+        }
+        .st-key-store_header {
+          position: sticky;
+          top: .45rem;
+          z-index: 90;
+          padding: .52rem .58rem;
+          border-radius: 15px;
+        }
+        .st-key-store_header .brand-name,
+        .st-key-store_header .brand-caption {
+          display: none;
+        }
+        .st-key-store_header button {
+          min-height: 38px;
+          padding-inline: .55rem;
+          font-size: .76rem;
         }
         .brand-caption, .header-status .status-chip:first-child { display: none; }
         .brand-mark { width: 38px; height: 38px; }
@@ -1091,12 +1125,84 @@ def save_profile_settings() -> None:
         st.session_state.nickname = saved_nickname
         st.session_state.interests = interests
         st.session_state.budget = budget
+        st.session_state.header_profile_nickname = saved_nickname
+        st.session_state.header_profile_interests = interests
+        st.session_state.header_profile_budget = budget
         if st.session_state.get("current_user"):
             st.session_state.current_user["nickname"] = saved_nickname
         get_cached_user.clear()
         st.session_state.profile_saved_notice = True
     except ValueError as error:
         st.session_state.profile_error = str(error)
+
+
+def verify_header_profile_password() -> None:
+    st.session_state.pop("header_profile_error", None)
+    try:
+        database.verify_user_password(
+            int(st.session_state.user_id),
+            st.session_state.get("header_profile_password", ""),
+        )
+        account = database.get_user(int(st.session_state.user_id))
+        st.session_state.header_profile_verified = True
+        st.session_state.header_profile_password = ""
+        st.session_state.header_profile_nickname = st.session_state.nickname
+        st.session_state.header_profile_phone = format_phone_input(
+            str(account.get("phone_number") or "")
+        )
+        st.session_state.header_profile_interests = list(
+            st.session_state.interests
+        )
+        st.session_state.header_profile_budget = tuple(st.session_state.budget)
+    except ValueError as error:
+        st.session_state.header_profile_verified = False
+        st.session_state.header_profile_error = str(error)
+
+
+def save_header_account_settings() -> None:
+    st.session_state.pop("header_profile_error", None)
+    new_password = st.session_state.get("header_new_password", "")
+    if new_password != st.session_state.get("header_confirm_password", ""):
+        st.session_state.header_profile_error = (
+            "새 비밀번호 확인이 일치하지 않습니다."
+        )
+        return
+    try:
+        nickname = (
+            st.session_state.get("header_profile_nickname", "").strip()
+            or "게스트"
+        )
+        phone = st.session_state.get("header_profile_phone", "")
+        interests = list(
+            st.session_state.get("header_profile_interests", [])
+        )
+        budget = tuple(
+            st.session_state.get("header_profile_budget", (0, 250_000))
+        )
+        database.save_profile(
+            int(st.session_state.user_id),
+            nickname,
+            interests,
+            budget,
+            phone_number=phone,
+            new_password=new_password,
+        )
+        st.session_state.nickname = nickname
+        st.session_state.interests = interests
+        st.session_state.budget = budget
+        st.session_state.profile_nickname = nickname
+        st.session_state.profile_interests = interests
+        st.session_state.profile_budget = budget
+        st.session_state.current_user["nickname"] = nickname
+        st.session_state.current_user["phone_number"] = phone
+        st.session_state.header_new_password = ""
+        st.session_state.header_confirm_password = ""
+        st.session_state.header_profile_verified = False
+        st.session_state.header_profile_notice = "계정 정보가 저장되었습니다."
+        get_cached_user.clear()
+        get_storefront_snapshot.clear()
+    except ValueError as error:
+        st.session_state.header_profile_error = str(error)
 
 
 def check_signup_email_availability() -> None:
@@ -1382,6 +1488,10 @@ def initialize_state(snapshot: dict) -> None:
     st.session_state.profile_nickname = profile["nickname"]
     st.session_state.profile_interests = profile["interests"]
     st.session_state.profile_budget = profile["budget"]
+    st.session_state.header_profile_verified = False
+    st.session_state.header_profile_password = ""
+    st.session_state.header_new_password = ""
+    st.session_state.header_confirm_password = ""
     st.session_state.favorites = snapshot["favorites"]
     st.session_state.cart = snapshot["cart"]
     st.session_state.behavior_summary = snapshot["behavior_summary"]
@@ -1581,6 +1691,7 @@ def delete_current_review(product_id: str) -> None:
 
 
 def open_product_detail(product_id: str, reason: str | None = None) -> None:
+    st.session_state.header_profile_verified = False
     st.session_state.selected_product_id = product_id
     st.session_state.selected_product_reason = reason
     st.session_state.detail_scroll_pending = True
@@ -1593,6 +1704,13 @@ def open_product_detail(product_id: str, reason: str | None = None) -> None:
 
 
 def close_product_detail() -> None:
+    # Streamlit removes widget-owned keys while the isolated detail screen is
+    # rendered. Restore edit controls from the canonical profile state rather
+    # than allowing empty widget defaults to overwrite the visible profile.
+    st.session_state.profile_nickname = st.session_state.nickname
+    st.session_state.profile_interests = list(st.session_state.interests)
+    st.session_state.profile_budget = tuple(st.session_state.budget)
+    st.session_state.header_profile_verified = False
     st.session_state.selected_product_id = None
     st.session_state.selected_product_reason = None
     st.session_state.pop("detail_order", None)
@@ -2074,36 +2192,14 @@ if selected_product_id := st.session_state.get("selected_product_id"):
 
 with st.sidebar:
     st.caption(f"로그인: {current_user['email']}")
-    st.header("👤 나의 취향 설정")
-    with st.form("profile_form"):
-        st.text_input(
-            "닉네임",
-            key="profile_nickname",
-        )
-        st.multiselect(
-            "관심 카테고리",
-            CATEGORIES,
-            max_selections=3,
-            key="profile_interests",
-        )
-        st.slider(
-            "관심 가격대",
-            min_value=0,
-            max_value=MAX_PRICE,
-            step=5_000,
-            format="%d원",
-            key="profile_budget",
-        )
-        st.form_submit_button(
-            "취향 저장",
-            type="primary",
-            width="stretch",
-            on_click=save_profile_settings,
-        )
-    if st.session_state.pop("profile_saved_notice", False):
-        st.toast("취향이 추천에 반영됐어요.")
-    if profile_error := st.session_state.get("profile_error"):
-        st.error(profile_error)
+    st.header(f"👤 {st.session_state.nickname}님")
+    interests_label = ", ".join(st.session_state.interests) or "미설정"
+    st.caption(f"관심 카테고리 · {interests_label}")
+    st.caption(
+        f"관심 가격대 · {int(st.session_state.budget[0]):,}원~"
+        f"{int(st.session_state.budget[1]):,}원"
+    )
+    st.info("계정 정보 수정은 화면 상단의 프로필 버튼에서 비밀번호 확인 후 가능합니다.")
     st.divider()
     favorite_count = len(st.session_state.favorites)
     with st.expander(f"찜한 상품 · {favorite_count}개"):
@@ -2122,6 +2218,13 @@ with st.sidebar:
                 st.caption(
                     f"{int(item['price']):,}원 · "
                     f"재고 {int(item['stock'])}개"
+                )
+                st.button(
+                    "구매 화면",
+                    key=f"sidebar_favorite_buy_{item['id']}",
+                    width="stretch",
+                    on_click=open_product_detail,
+                    args=(str(item["id"]), "찜한 상품에서 선택한 상품입니다."),
                 )
 
     cart_count = sum(st.session_state.cart.values())
@@ -2165,6 +2268,14 @@ with st.sidebar:
                 if item_names:
                     st.caption(item_names)
                 st.caption(f"주문번호 · {order['order_id']}")
+                st.button(
+                    "주문 취소",
+                    key=f"sidebar_cancel_order_{order['order_id']}",
+                    width="stretch",
+                    disabled=str(order["status"]) != "PAID_DEMO",
+                    on_click=cancel_demo_order,
+                    args=(str(order["order_id"]),),
+                )
             st.caption("최근 모의결제 5건까지 표시됩니다.")
     st.caption(
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
@@ -2207,23 +2318,135 @@ base_recommendations = rank_products(
     purchased_ids=purchased_ids,
 )
 
+st.markdown('<div class="store-shell-marker"></div>', unsafe_allow_html=True)
+with st.container(key="store_header"):
+    brand_col, profile_col, favorite_col, cart_col = st.columns(
+        [4, 1.35, .75, .75],
+        vertical_alignment="center",
+    )
+    brand_col.markdown(
+        """
+        <div class="brand-lockup">
+          <div class="brand-mark">SP</div>
+          <div>
+            <div class="brand-name">StylePick AI</div>
+            <div class="brand-caption">나를 이해하는 설명 가능한 쇼핑</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with profile_col.popover(
+        f"👤 {st.session_state.nickname}님",
+        width="stretch",
+    ):
+        st.caption(f"계정 · {current_user['email']}")
+        if profile_notice := st.session_state.pop(
+            "header_profile_notice",
+            None,
+        ):
+            st.success(profile_notice)
+        if profile_error := st.session_state.get("header_profile_error"):
+            st.error(profile_error)
+        if not st.session_state.get("header_profile_verified", False):
+            st.write("정보를 수정하려면 현재 비밀번호를 확인해 주세요.")
+            with st.form("header_profile_verify_form"):
+                st.text_input(
+                    "현재 비밀번호",
+                    type="password",
+                    key="header_profile_password",
+                )
+                st.form_submit_button(
+                    "비밀번호 확인",
+                    type="primary",
+                    width="stretch",
+                    on_click=verify_header_profile_password,
+                )
+        else:
+            with st.form("header_account_edit_form"):
+                st.text_input("닉네임", key="header_profile_nickname")
+                st.text_input(
+                    "전화번호",
+                    key="header_profile_phone",
+                    max_chars=20,
+                )
+                st.multiselect(
+                    "관심 카테고리",
+                    CATEGORIES,
+                    max_selections=3,
+                    key="header_profile_interests",
+                )
+                st.slider(
+                    "관심 가격대",
+                    min_value=0,
+                    max_value=MAX_PRICE,
+                    step=5_000,
+                    format="%d원",
+                    key="header_profile_budget",
+                )
+                st.text_input(
+                    "새 비밀번호",
+                    type="password",
+                    key="header_new_password",
+                    help="변경하지 않으려면 비워 두세요.",
+                )
+                st.text_input(
+                    "새 비밀번호 확인",
+                    type="password",
+                    key="header_confirm_password",
+                )
+                st.form_submit_button(
+                    "계정 정보 저장",
+                    type="primary",
+                    width="stretch",
+                    on_click=save_header_account_settings,
+                )
+
+    with favorite_col.popover(
+        f"♥ {len(st.session_state.favorites)}",
+        width="stretch",
+    ):
+        st.subheader("찜한 상품")
+        header_favorites = products[
+            products["id"].isin(st.session_state.favorites)
+        ]
+        if header_favorites.empty:
+            st.caption("찜한 상품이 없습니다.")
+        for _, item in header_favorites.iterrows():
+            st.markdown(f"{item['emoji']} **{item['name']}**")
+            st.caption(
+                f"{int(item['price']):,}원 · 재고 {int(item['stock'])}개"
+            )
+            st.button(
+                "구매 화면",
+                key=f"header_favorite_detail_{item['id']}",
+                width="stretch",
+                on_click=open_product_detail,
+                args=(str(item["id"]), "찜한 상품에서 선택한 상품입니다."),
+            )
+            st.divider()
+
+    with cart_col.popover(
+        f"🛒 {sum(st.session_state.cart.values())}",
+        width="stretch",
+    ):
+        st.subheader("장바구니")
+        header_cart = products[products["id"].isin(st.session_state.cart)]
+        if header_cart.empty:
+            st.caption("장바구니가 비어 있습니다.")
+        else:
+            header_cart_total = 0
+            for _, item in header_cart.iterrows():
+                quantity = int(st.session_state.cart[str(item["id"])])
+                line_total = int(item["price"]) * quantity
+                header_cart_total += line_total
+                st.markdown(f"{item['emoji']} **{item['name']}**")
+                st.caption(f"{quantity}개 · {line_total:,}원")
+                st.divider()
+            st.markdown(f"**합계 {header_cart_total:,}원**")
+
 st.markdown(
     f"""
-    <div class="store-shell-marker"></div>
-    <header class="store-header">
-      <div class="brand-lockup">
-        <div class="brand-mark">SP</div>
-        <div>
-          <div class="brand-name">StylePick AI</div>
-          <div class="brand-caption">나를 이해하는 설명 가능한 쇼핑</div>
-        </div>
-      </div>
-      <div class="header-status">
-        <span class="status-chip">👤 {escape(st.session_state.nickname)}님</span>
-        <span class="status-chip">♥ {len(st.session_state.favorites)}</span>
-        <span class="status-chip">🛒 {sum(st.session_state.cart.values())}</span>
-      </div>
-    </header>
     <div class="hero">
       <div class="hero-copy">
         <span class="hero-eyebrow">PERSONAL SHOPPING, EXPLAINED</span>

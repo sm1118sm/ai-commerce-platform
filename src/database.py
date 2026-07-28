@@ -546,6 +546,7 @@ class StoreDatabase:
             "id": user_id,
             "email": email,
             "nickname": nickname,
+            "phone_number": phone_number,
             "role": "USER",
             "status": "ACTIVE",
             "created_at": now,
@@ -583,7 +584,8 @@ class StoreDatabase:
         with self.connect() as connection:
             row = connection.execute(
                 """
-                SELECT id, email, nickname, role, status, created_at, last_login_at
+                SELECT id, email, nickname, phone_number, role, status,
+                       created_at, last_login_at
                 FROM users WHERE email = ?
                 """,
                 (email,),
@@ -625,6 +627,7 @@ class StoreDatabase:
             "id": int(row["id"]),
             "email": row["email"],
             "nickname": row["nickname"],
+            "phone_number": row["phone_number"],
             "role": row["role"],
             "status": row["status"],
             "created_at": row["created_at"],
@@ -648,7 +651,8 @@ class StoreDatabase:
         with self.connect() as connection:
             row = connection.execute(
                 """
-                SELECT id, email, nickname, role, status, created_at, last_login_at
+                SELECT id, email, nickname, phone_number, role, status,
+                       created_at, last_login_at
                 FROM users WHERE id = ?
                 """,
                 (int(user_id),),
@@ -656,6 +660,15 @@ class StoreDatabase:
         if row is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
         return dict(row)
+
+    def verify_user_password(self, user_id: int, password: str) -> None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT password_hash FROM users WHERE id = ? AND status = 'ACTIVE'",
+                (int(user_id),),
+            ).fetchone()
+            if row is None or not verify_password(password, row["password_hash"]):
+                raise ValueError("비밀번호가 올바르지 않습니다.")
 
     def delete_user(self, user_id: int, password: str) -> None:
         """Permanently delete a member and all rows owned by that member."""
@@ -704,8 +717,15 @@ class StoreDatabase:
         nickname: str,
         interests: list[str],
         budget: tuple[int, int],
+        *,
+        phone_number: str | None = None,
+        new_password: str = "",
     ) -> None:
         nickname = normalize_nickname(nickname)
+        if phone_number is not None:
+            phone_number = normalize_phone(phone_number)
+        if new_password:
+            validate_password(new_password)
         if not 1 <= len(nickname) <= 30:
             raise ValueError("닉네임은 1~30자로 입력하세요.")
         if int(budget[0]) > int(budget[1]):
@@ -745,10 +765,33 @@ class StoreDatabase:
                 ).fetchone()
                 if duplicate_nickname:
                     raise ValueError("이미 사용 중인 닉네임입니다.")
-                connection.execute(
-                    "UPDATE users SET nickname = ? WHERE id = ?",
-                    (nickname, int(user_id)),
-                )
+                if phone_number is None and not new_password:
+                    connection.execute(
+                        "UPDATE users SET nickname = ? WHERE id = ?",
+                        (nickname, int(user_id)),
+                    )
+                elif new_password:
+                    connection.execute(
+                        """
+                        UPDATE users
+                        SET nickname = ?, phone_number = ?, password_hash = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            nickname,
+                            phone_number,
+                            hash_password(new_password),
+                            int(user_id),
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE users SET nickname = ?, phone_number = ?
+                        WHERE id = ?
+                        """,
+                        (nickname, phone_number, int(user_id)),
+                    )
                 connection.execute(
                     preferences_sql,
                     (
@@ -763,6 +806,8 @@ class StoreDatabase:
             raise
         except Exception as error:
             if is_unique_violation(error):
+                if "phone" in str(error).lower():
+                    raise ValueError("이미 가입된 전화번호입니다.") from error
                 raise ValueError("이미 사용 중인 닉네임입니다.") from error
             raise
 
