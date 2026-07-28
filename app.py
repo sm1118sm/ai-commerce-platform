@@ -422,6 +422,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Keep authentication in one stable delta slot. On a successful login the same
+# slot is emptied before any database/model wait, so the browser cannot retain
+# auth elements underneath the storefront while Streamlit reconciles the page.
+auth_page_slot = st.empty()
+
 
 @st.cache_data
 def get_products() -> pd.DataFrame:
@@ -1282,8 +1287,24 @@ else:
 
 initialize_auth()
 if not st.session_state.user_id:
-    render_auth()
+    with auth_page_slot.container():
+        render_auth()
     st.stop()
+auth_page_slot.markdown(
+    """
+    <div style="
+      max-width:520px;margin:12vh auto;padding:1.4rem 1.6rem;
+      border:1px solid #e5e7eb;border-radius:20px;background:#fff;
+      box-shadow:0 18px 50px rgba(15,23,42,.08);text-align:center
+    ">
+      <b style="font-size:1.08rem">로그인 완료</b>
+      <div style="margin-top:.35rem;color:#64748b">
+        취향과 상품 정보를 불러오고 있어요.
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 try:
     database = database_future.result()
@@ -1310,6 +1331,7 @@ if storefront_snapshot is None:
         database,
     )
 initialize_state(storefront_snapshot)
+auth_page_slot.empty()
 current_user = st.session_state.get("current_user")
 if current_user is None:
     current_user = get_cached_user(

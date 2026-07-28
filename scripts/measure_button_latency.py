@@ -185,12 +185,17 @@ class ButtonLatencyRun:
 
     def measure_product_detail(self, app: AppTest) -> None:
         detail_key = f"shop_page_0_detail_{DETAIL_PRODUCT_ID}"
+        original_nickname = app.session_state["nickname"]
         for _ in range(REPEAT_COUNT):
             self.click(app, "상품 상세", key=detail_key)
             self.click(app, "상세에서 돌아가기", key="detail_back")
             if app.session_state["user_id"] is None:
                 raise AssertionError(
                     "상품 상세에서 돌아간 뒤 로그인 세션이 사라졌습니다."
+                )
+            if app.session_state["nickname"] != original_nickname:
+                raise AssertionError(
+                    "상품 상세에서 돌아간 뒤 닉네임 상태가 바뀌었습니다."
                 )
 
         self.click(app, "상세 동작 준비", key=detail_key, record=False)
