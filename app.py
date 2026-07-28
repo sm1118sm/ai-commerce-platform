@@ -47,6 +47,9 @@ AUTH_SESSION_SECRET = (
 AUTH_COOKIE_COMPONENT_ENABLED = (
     os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") != "1"
 )
+# Increment when StoreDatabase gains methods or state that make an object from
+# an earlier Streamlit hot deployment incompatible with the current app.
+DATABASE_RESOURCE_VERSION = "2026-07-reviews-v1"
 st.set_page_config(
     page_title="StylePick AI",
     page_icon="✨",
@@ -688,7 +691,11 @@ def start_daemon_future(
 
 
 @st.cache_resource(show_spinner=False)
-def get_database_future(database_url: str) -> Future:
+def get_database_future(
+    database_url: str,
+    resource_version: str,
+) -> Future:
+    del resource_version
     return start_daemon_future(
         build_database,
         database_url,
@@ -697,7 +704,11 @@ def get_database_future(database_url: str) -> Future:
 
 
 @st.cache_resource(show_spinner=False)
-def get_database_sync(database_url: str) -> StoreDatabase:
+def get_database_sync(
+    database_url: str,
+    resource_version: str,
+) -> StoreDatabase:
+    del resource_version
     return build_database(database_url)
 
 
@@ -713,9 +724,14 @@ class LazyDatabase:
 
 if os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") == "1":
     database_future = Future()
-    database_future.set_result(get_database_sync(DATABASE_TARGET))
+    database_future.set_result(
+        get_database_sync(DATABASE_TARGET, DATABASE_RESOURCE_VERSION)
+    )
 else:
-    database_future = get_database_future(DATABASE_TARGET)
+    database_future = get_database_future(
+        DATABASE_TARGET,
+        DATABASE_RESOURCE_VERSION,
+    )
 database = LazyDatabase(database_future)
 RECOMMENDER_BACKEND = "cnn"
 
