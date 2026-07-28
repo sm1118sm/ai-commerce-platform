@@ -1699,7 +1699,7 @@ ORDER_STATUS_LABELS = {
     "PREPARING_DEMO": "상품 준비",
     "SHIPPING_DEMO": "배송 중",
     "DELIVERED_DEMO": "배송 완료",
-    "CANCELED_DEMO": "주문 취소",
+    "CANCELED_DEMO": "주문 취소 완료",
 }
 
 
@@ -1892,8 +1892,35 @@ def sync_store_tab_from_route() -> str:
         st.session_state.store_tab = STORE_TAB_LABEL_BY_SLUG[routed_slug]
         st.session_state.store_tab_route = routed_slug
     return STORE_TAB_LABEL_BY_SLUG[routed_slug]
-    st.session_state.pop("detail_order", None)
-    st.session_state.pop("detail_scroll_pending", None)
+
+
+def enable_browser_history_reconciliation() -> None:
+    """Keep mobile browser history aligned with Streamlit server state."""
+    st.iframe(
+        """
+        <script>
+        (() => {
+          const parentWindow = window.parent;
+          const handlerKey = "__stylepickHistoryPopstateHandler";
+          const previousHandler = parentWindow[handlerKey];
+          if (previousHandler) {
+            parentWindow.removeEventListener("popstate", previousHandler);
+          }
+          const reconcileHistory = () => {
+            parentWindow.setTimeout(() => {
+              parentWindow.location.reload();
+            }, 0);
+          };
+          parentWindow[handlerKey] = reconcileHistory;
+          parentWindow.addEventListener("popstate", reconcileHistory);
+          parentWindow.history.scrollRestoration = "manual";
+        })();
+        </script>
+        """,
+        height=1,
+        width=1,
+        tab_index=-1,
+    )
 
 
 def buy_product_now(product_id: str) -> None:
@@ -2370,6 +2397,7 @@ if current_user is None:
 behavior_summary = st.session_state.behavior_summary
 if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
+enable_browser_history_reconciliation()
 sync_product_route(set(products["id"].astype(str)))
 if selected_product_id := st.session_state.get("selected_product_id"):
     render_product_detail_page(str(selected_product_id))
@@ -3016,20 +3044,56 @@ with cart_tab:
                 if status == "CANCELED_DEMO":
                     st.info("취소가 완료되어 구매 수량만큼 재고가 복원됐습니다.")
                 cancel_col, reorder_col = st.columns(2)
-                cancel_col.button(
-                    "주문 취소",
-                    key=f"cancel_order_{order['order_id']}",
-                    disabled=status != "PAID_DEMO",
-                    width="stretch",
-                    on_click=cancel_demo_order,
-                    args=(str(order["order_id"]),),
-                )
+                order_id = str(order["order_id"])
+                if status == "CANCELED_DEMO":
+                    cancel_col.button(
+                        "주문 취소 완료",
+                        key=f"cancel_complete_{order_id}",
+                        disabled=True,
+                        width="stretch",
+                    )
+                elif status != "PAID_DEMO":
+                    cancel_col.button(
+                        "주문 취소 불가",
+                        key=f"cancel_unavailable_{order_id}",
+                        disabled=True,
+                        width="stretch",
+                    )
+                elif (
+                    st.session_state.get("pending_cancel_order_id")
+                    == order_id
+                ):
+                    with cancel_col:
+                        st.warning("주문을 취소하시겠습니까?")
+                        confirm_col, dismiss_col = st.columns(2)
+                        confirm_col.button(
+                            "취소 확정",
+                            key=f"confirm_cancel_{order_id}",
+                            type="primary",
+                            width="stretch",
+                            on_click=confirm_demo_order_cancel,
+                            args=(order_id,),
+                        )
+                        dismiss_col.button(
+                            "돌아가기",
+                            key=f"dismiss_cancel_{order_id}",
+                            width="stretch",
+                            on_click=dismiss_demo_order_cancel,
+                        )
+                else:
+                    cancel_col.button(
+                        "주문 취소",
+                        key=f"cancel_order_{order_id}",
+                        width="stretch",
+                        on_click=request_demo_order_cancel,
+                        args=(order_id,),
+                    )
                 reorder_col.button(
                     "다시 담기",
-                    key=f"reorder_{order['order_id']}",
+                    key=f"reorder_{order_id}",
                     width="stretch",
                     on_click=reorder_demo_order,
-                    args=(str(order["order_id"]),),
+                    args=(order_id,),
                 )
 
 st.markdown(
