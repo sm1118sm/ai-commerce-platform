@@ -42,6 +42,23 @@ if not DATABASE_TARGET:
     )
 AUTH_COOKIE_NAME = "stylepick_session"
 AUTH_SESSION_TTL_SECONDS = 2 * 60 * 60
+PRODUCT_ROUTE_PARAM = "product"
+STORE_TAB_ROUTE_PARAM = "view"
+STORE_TAB_LABELS = [
+    "🛍️ 상품 탐색",
+    "✨ AI 추천",
+    "♥ 찜 목록",
+    "🛒 장바구니·주문",
+]
+STORE_TAB_SLUGS = {
+    STORE_TAB_LABELS[0]: "shop",
+    STORE_TAB_LABELS[1]: "recommend",
+    STORE_TAB_LABELS[2]: "favorites",
+    STORE_TAB_LABELS[3]: "cart",
+}
+STORE_TAB_LABEL_BY_SLUG = {
+    slug: label for label, slug in STORE_TAB_SLUGS.items()
+}
 AUTH_SESSION_SECRET = (
     os.environ.get("SESSION_SECRET") or DATABASE_TARGET
 )
@@ -194,6 +211,8 @@ st.markdown(
         backdrop-filter: blur(14px);
       }
       .st-key-store_header {
+        container-name: store-header;
+        container-type: inline-size;
         padding: .72rem 1rem;
         margin-bottom: 1.1rem;
         background: rgba(255,255,255,.9);
@@ -498,6 +517,53 @@ st.markdown(
       }
       .store-footer b { color: var(--sp-ink); }
 
+      @container store-header (max-width: 720px) {
+        .st-key-store_header div[data-testid="stHorizontalBlock"] {
+          display: grid !important;
+          grid-template-columns:
+            42px minmax(82px, 1fr)
+            minmax(56px, 64px) minmax(56px, 64px) !important;
+          align-items: center;
+          gap: .35rem;
+        }
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"] {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: auto !important;
+          height: 42px;
+          min-width: 0 !important;
+          max-width: none !important;
+          flex: none !important;
+        }
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"]
+        > div[data-testid="stVerticalBlock"] {
+          width: 100%;
+          height: 42px;
+          justify-content: center;
+          gap: 0;
+        }
+        .st-key-store_header .brand-lockup {
+          height: 42px;
+          justify-content: center;
+        }
+        .st-key-store_header .brand-name,
+        .st-key-store_header .brand-caption {
+          display: none;
+        }
+        .st-key-store_header button {
+          width: 100%;
+          height: 42px;
+          min-height: 42px;
+          padding: 0 .45rem;
+          font-size: .76rem;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+
       @media (max-width: 1200px) {
         .hero {
           grid-template-columns: 1fr;
@@ -601,16 +667,34 @@ st.markdown(
         }
         .st-key-store_header div[data-testid="stHorizontalBlock"] {
           display: grid !important;
-          grid-template-columns: 42px minmax(92px, 1fr) 56px 56px !important;
+          grid-template-columns:
+            42px minmax(82px, 1fr)
+            minmax(56px, 64px) minmax(56px, 64px) !important;
           align-items: center;
           gap: .35rem;
         }
         .st-key-store_header div[data-testid="stHorizontalBlock"]
         > div[data-testid="stColumn"] {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
           width: auto !important;
+          height: 42px;
           min-width: 0 !important;
           max-width: none !important;
           flex: none !important;
+        }
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"]
+        > div[data-testid="stVerticalBlock"] {
+          width: 100%;
+          height: 42px;
+          justify-content: center;
+          gap: 0;
+        }
+        .st-key-store_header .brand-lockup {
+          height: 42px;
+          justify-content: center;
         }
         .st-key-store_header .brand-name,
         .st-key-store_header .brand-caption {
@@ -618,7 +702,9 @@ st.markdown(
         }
         .st-key-store_header button {
           width: 100%;
-          min-height: 38px;
+          height: 42px;
+          min-height: 42px;
+          padding-block: 0;
           padding-inline: .55rem;
           font-size: .76rem;
           overflow: hidden;
@@ -1665,6 +1751,20 @@ def cancel_demo_order(order_id: str) -> None:
         st.session_state.order_action_error = str(error)
 
 
+def request_demo_order_cancel(order_id: str) -> None:
+    st.session_state.pending_cancel_order_id = order_id
+
+
+def dismiss_demo_order_cancel() -> None:
+    st.session_state.pop("pending_cancel_order_id", None)
+
+
+def confirm_demo_order_cancel(order_id: str) -> None:
+    cancel_demo_order(order_id)
+    if not st.session_state.get("order_action_error"):
+        st.session_state.pop("pending_cancel_order_id", None)
+
+
 def reorder_demo_order(order_id: str) -> None:
     st.session_state.pop("order_action_error", None)
     try:
@@ -1709,6 +1809,7 @@ def open_product_detail(product_id: str, reason: str | None = None) -> None:
     st.session_state.selected_product_id = product_id
     st.session_state.selected_product_reason = reason
     st.session_state.detail_scroll_pending = True
+    st.query_params[PRODUCT_ROUTE_PARAM] = product_id
     database.log_behavior_async(
         int(st.session_state.user_id),
         st.session_state.session_id,
@@ -1727,6 +1828,61 @@ def close_product_detail() -> None:
     st.session_state.header_profile_verified = False
     st.session_state.selected_product_id = None
     st.session_state.selected_product_reason = None
+    if PRODUCT_ROUTE_PARAM in st.query_params:
+        del st.query_params[PRODUCT_ROUTE_PARAM]
+
+
+def sync_product_route(valid_product_ids: set[str]) -> None:
+    """Mirror URL history into the product-detail session state."""
+    routed_product_id = str(
+        st.query_params.get(PRODUCT_ROUTE_PARAM, "")
+    ).strip()
+    selected_product_id = st.session_state.get("selected_product_id")
+    if routed_product_id in valid_product_ids:
+        if str(selected_product_id or "") != routed_product_id:
+            st.session_state.header_profile_verified = False
+            st.session_state.selected_product_id = routed_product_id
+            st.session_state.selected_product_reason = (
+                "공유 링크 또는 브라우저 기록에서 연 상품입니다."
+            )
+            st.session_state.detail_scroll_pending = True
+        return
+    if routed_product_id:
+        del st.query_params[PRODUCT_ROUTE_PARAM]
+    if selected_product_id is not None:
+        st.session_state.selected_product_id = None
+        st.session_state.selected_product_reason = None
+        st.session_state.header_profile_verified = False
+
+
+def sync_store_tab_query() -> None:
+    """Write a tab change to browser history for mobile back navigation."""
+    active_label = st.session_state.get(
+        "store_tab",
+        STORE_TAB_LABELS[0],
+    )
+    active_slug = STORE_TAB_SLUGS.get(active_label, "shop")
+    st.session_state.store_tab_route = active_slug
+    if active_slug == "shop":
+        if STORE_TAB_ROUTE_PARAM in st.query_params:
+            del st.query_params[STORE_TAB_ROUTE_PARAM]
+    else:
+        st.query_params[STORE_TAB_ROUTE_PARAM] = active_slug
+
+
+def sync_store_tab_from_route() -> str:
+    """Restore the active tab after browser Back, Forward, or swipe."""
+    routed_slug = str(
+        st.query_params.get(STORE_TAB_ROUTE_PARAM, "shop")
+    ).strip()
+    if routed_slug not in STORE_TAB_LABEL_BY_SLUG:
+        routed_slug = "shop"
+        if STORE_TAB_ROUTE_PARAM in st.query_params:
+            del st.query_params[STORE_TAB_ROUTE_PARAM]
+    if st.session_state.get("store_tab_route") != routed_slug:
+        st.session_state.store_tab = STORE_TAB_LABEL_BY_SLUG[routed_slug]
+        st.session_state.store_tab_route = routed_slug
+    return STORE_TAB_LABEL_BY_SLUG[routed_slug]
     st.session_state.pop("detail_order", None)
     st.session_state.pop("detail_scroll_pending", None)
 
@@ -2205,6 +2361,7 @@ if current_user is None:
 behavior_summary = st.session_state.behavior_summary
 if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
+sync_product_route(set(products["id"].astype(str)))
 if selected_product_id := st.session_state.get("selected_product_id"):
     render_product_detail_page(str(selected_product_id))
     st.stop()
@@ -2265,14 +2422,50 @@ with st.sidebar:
                 if item_names:
                     st.caption(item_names)
                 st.caption(f"주문번호 · {order['order_id']}")
-                st.button(
-                    "주문 취소",
-                    key=f"sidebar_cancel_order_{order['order_id']}",
-                    width="stretch",
-                    disabled=str(order["status"]) != "PAID_DEMO",
-                    on_click=cancel_demo_order,
-                    args=(str(order["order_id"]),),
-                )
+                order_id = str(order["order_id"])
+                status = str(order["status"])
+                if status == "CANCELED_DEMO":
+                    st.button(
+                        "주문 취소 완료",
+                        key=f"sidebar_cancel_complete_{order_id}",
+                        width="stretch",
+                        disabled=True,
+                    )
+                elif status != "PAID_DEMO":
+                    st.button(
+                        "주문 취소 불가",
+                        key=f"sidebar_cancel_unavailable_{order_id}",
+                        width="stretch",
+                        disabled=True,
+                    )
+                elif (
+                    st.session_state.get("pending_cancel_order_id")
+                    == order_id
+                ):
+                    st.warning("이 주문을 취소하시겠습니까?")
+                    confirm_col, back_col = st.columns(2)
+                    confirm_col.button(
+                        "취소 확정",
+                        key=f"sidebar_confirm_cancel_{order_id}",
+                        type="primary",
+                        width="stretch",
+                        on_click=confirm_demo_order_cancel,
+                        args=(order_id,),
+                    )
+                    back_col.button(
+                        "돌아가기",
+                        key=f"sidebar_dismiss_cancel_{order_id}",
+                        width="stretch",
+                        on_click=dismiss_demo_order_cancel,
+                    )
+                else:
+                    st.button(
+                        "주문 취소",
+                        key=f"sidebar_cancel_order_{order_id}",
+                        width="stretch",
+                        on_click=request_demo_order_cancel,
+                        args=(order_id,),
+                    )
             st.caption("최근 모의결제 5건까지 표시됩니다.")
     st.caption(
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
@@ -2468,8 +2661,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+default_store_tab = sync_store_tab_from_route()
 shop_tab, recommend_tab, favorite_tab, cart_tab = st.tabs(
-    ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"]
+    STORE_TAB_LABELS,
+    default=default_store_tab,
+    key="store_tab",
+    on_change=sync_store_tab_query,
 )
 
 with shop_tab:
