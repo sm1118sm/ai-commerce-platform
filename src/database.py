@@ -1547,10 +1547,12 @@ class StoreDatabase:
 
             items = connection.execute(
                 """
-                SELECT product_id, product_name, quantity
-                FROM order_items
-                WHERE order_id = ?
-                ORDER BY id
+                SELECT
+                    oi.product_id, oi.product_name, oi.quantity, p.stock
+                FROM order_items oi
+                JOIN products p ON p.product_id = oi.product_id
+                WHERE oi.order_id = ?
+                ORDER BY oi.id
                 """,
                 (order_id,),
             ).fetchall()
@@ -1564,6 +1566,7 @@ class StoreDatabase:
             )
             if updated.rowcount != 1:
                 raise ValueError("주문 상태가 변경되어 다시 확인해 주세요.")
+            canceled_items = []
             for item in items:
                 product_id = str(item["product_id"])
                 quantity = int(item["quantity"])
@@ -1601,10 +1604,19 @@ class StoreDatabase:
                         """,
                         (int(user_id), product_id),
                     )
+                canceled_items.append(
+                    {
+                        "product_id": product_id,
+                        "quantity": quantity,
+                        "remaining_stock": int(item["stock"]) + quantity,
+                        "still_purchased": active_purchase is not None,
+                    }
+                )
         return {
             "order_id": order_id,
             "status": "CANCELED_DEMO",
             "restored_quantity": sum(int(item["quantity"]) for item in items),
+            "items": canceled_items,
         }
 
     def reorder_to_cart(
