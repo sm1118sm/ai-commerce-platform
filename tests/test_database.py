@@ -20,6 +20,7 @@ from src.database import (
 
 TEST_DATABASE_URL = os.environ.get("STYLEPICK_TEST_DATABASE_URL", "")
 TABLES_IN_DELETE_ORDER = [
+    "product_reviews",
     "order_items",
     "user_orders",
     "behavior_logs",
@@ -285,6 +286,33 @@ class DatabaseTest(unittest.TestCase):
             direct_order["items"][0]["remaining_stock"],
             direct_stock_after,
         )
+        with self.assertRaisesRegex(ValueError, "구매 완료한 상품"):
+            database.save_product_review(
+                user_id,
+                "P003",
+                5,
+                "구매하지 않은 상품 후기",
+            )
+        saved_review = database.save_product_review(
+            user_id,
+            "P001",
+            5,
+            "직접 구매한 상품이라 만족합니다.",
+        )
+        self.assertEqual(saved_review["rating"], 5)
+        self.assertEqual(
+            database.list_product_reviews("P001")[0]["content"],
+            "직접 구매한 상품이라 만족합니다.",
+        )
+        database.save_product_review(
+            user_id,
+            "P001",
+            4,
+            "사용 후 별점을 수정했습니다.",
+        )
+        reviews = database.list_product_reviews("P001")
+        self.assertEqual(len(reviews), 1)
+        self.assertEqual(reviews[0]["rating"], 4)
         canceled = database.cancel_order(
             user_id,
             direct_order["order_id"],
@@ -306,6 +334,7 @@ class DatabaseTest(unittest.TestCase):
             "CANCELED_DEMO",
         )
         self.assertNotIn("P001", database.purchased_product_ids(user_id))
+        self.assertEqual(database.list_product_reviews("P001"), [])
         with self.assertRaisesRegex(ValueError, "이미 취소된 주문"):
             database.cancel_order(
                 user_id,

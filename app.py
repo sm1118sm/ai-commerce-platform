@@ -828,6 +828,15 @@ def get_cached_order_history(
     return _database.list_orders(user_id, limit=limit)
 
 
+@st.cache_data(ttl=15, show_spinner=False)
+def get_cached_product_reviews(
+    database_url: str,
+    product_id: str,
+    _database: StoreDatabase,
+) -> list[dict]:
+    return _database.list_product_reviews(product_id)
+
+
 def queue_auth_cookie(
     action: str,
     token: str = "",
@@ -1519,6 +1528,19 @@ def reorder_demo_order(order_id: str) -> None:
         st.session_state.order_action_error = str(error)
 
 
+def delete_current_review(product_id: str) -> None:
+    st.session_state.pop("review_error", None)
+    try:
+        database.delete_product_review(
+            int(st.session_state.user_id),
+            product_id,
+        )
+        get_cached_product_reviews.clear()
+        st.session_state.review_notice = "후기를 삭제했습니다."
+    except ValueError as error:
+        st.session_state.review_error = str(error)
+
+
 def open_product_detail(product_id: str, reason: str | None = None) -> None:
     st.session_state.selected_product_id = product_id
     st.session_state.selected_product_reason = reason
@@ -1714,6 +1736,104 @@ def render_product_detail_page(product_id: str) -> None:
         )
     if detail_error := st.session_state.get("detail_order_error"):
         st.error(detail_error)
+
+    reviews = get_cached_product_reviews(
+        DATABASE_TARGET,
+        product_id,
+        database,
+    )
+    review_count = len(reviews)
+    review_average = (
+        sum(review["rating"] for review in reviews) / review_count
+        if review_count
+        else 0
+    )
+    with st.expander(
+        f"구매자 후기 · {review_count}개"
+        + (f" · ⭐ {review_average:.1f}" if review_count else "")
+    ):
+        if review_notice := st.session_state.pop("review_notice", None):
+            st.success(review_notice)
+        if review_error := st.session_state.get("review_error"):
+            st.error(review_error)
+
+        current_review = next(
+            (
+                review
+                for review in reviews
+                if int(review["user_id"]) == int(st.session_state.user_id)
+            ),
+            None,
+        )
+        if product_id in st.session_state.purchased_ids:
+            st.caption("구매 확인 완료 · 상품별 후기 1개를 작성·수정할 수 있습니다.")
+            with st.form(f"review_form_{product_id}"):
+                rating = st.select_slider(
+                    "별점",
+                    options=[1, 2, 3, 4, 5],
+                    value=(
+                        int(current_review["rating"])
+                        if current_review
+                        else 5
+                    ),
+                    format_func=lambda value: f"{value}점",
+                )
+                content = st.text_area(
+                    "후기",
+                    value=(
+                        str(current_review["content"])
+                        if current_review
+                        else ""
+                    ),
+                    placeholder="상품을 직접 사용한 경험을 5자 이상 작성해 주세요.",
+                    max_chars=500,
+                )
+                review_submitted = st.form_submit_button(
+                    "후기 수정" if current_review else "후기 등록",
+                    type="primary",
+                    width="stretch",
+                )
+            if review_submitted:
+                try:
+                    database.save_product_review(
+                        int(st.session_state.user_id),
+                        product_id,
+                        int(rating),
+                        content,
+                    )
+                    get_cached_product_reviews.clear()
+                    st.session_state.pop("review_error", None)
+                    st.session_state.review_notice = "후기가 저장되었습니다."
+                    st.rerun()
+                except ValueError as error:
+                    st.session_state.review_error = str(error)
+                    st.rerun()
+            if current_review:
+                st.button(
+                    "내 후기 삭제",
+                    key=f"delete_review_{product_id}",
+                    width="stretch",
+                    on_click=delete_current_review,
+                    args=(product_id,),
+                )
+        else:
+            st.caption("구매 완료한 회원만 후기를 작성할 수 있습니다.")
+
+        if not reviews:
+            st.info("아직 등록된 구매자 후기가 없습니다.")
+        else:
+            st.divider()
+            for index, review in enumerate(reviews):
+                if index:
+                    st.divider()
+                stars = "★" * int(review["rating"]) + "☆" * (
+                    5 - int(review["rating"])
+                )
+                st.markdown(
+                    f"**{escape(str(review['nickname']))}** · {stars}"
+                )
+                st.write(review["content"])
+                st.caption(f"구매 확인 · {review['updated_at']}")
 
 
 def product_card(product: pd.Series, key_prefix: str, reason: str | None = None) -> None:

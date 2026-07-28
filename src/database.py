@@ -260,6 +260,8 @@ class StoreDatabase:
         )
         self._mysql_pool = None
         self._mysql_pool_lock = Lock()
+        self._reviews_schema_lock = Lock()
+        self._reviews_schema_ready = False
         self._cart_write_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="stylepick-cart-write",
@@ -344,6 +346,69 @@ class StoreDatabase:
         schema = schema_path.read_text(encoding="utf-8")
         with self.connect() as connection:
             connection.executescript(schema)
+        self._reviews_schema_ready = True
+
+    def ensure_reviews_schema(self) -> None:
+        """Create the optional reviews table once without delaying app startup."""
+        if getattr(self, "_reviews_schema_ready", False):
+            return
+        if not hasattr(self, "_reviews_schema_lock"):
+            self._reviews_schema_lock = Lock()
+        with self._reviews_schema_lock:
+            if getattr(self, "_reviews_schema_ready", False):
+                return
+            if self.kind == "mysql":
+                schema = """
+                    CREATE TABLE IF NOT EXISTS product_reviews (
+                        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        product_id VARCHAR(32) NOT NULL,
+                        order_id VARCHAR(32) NOT NULL,
+                        rating TINYINT UNSIGNED NOT NULL,
+                        content VARCHAR(500) NOT NULL,
+                        created_at VARCHAR(32) NOT NULL,
+                        updated_at VARCHAR(32) NOT NULL,
+                        PRIMARY KEY (id),
+                        UNIQUE KEY uq_reviews_user_product (user_id, product_id),
+                        KEY idx_reviews_product_time (product_id, updated_at),
+                        CONSTRAINT chk_reviews_rating
+                            CHECK (rating BETWEEN 1 AND 5),
+                        CONSTRAINT fk_reviews_user FOREIGN KEY (user_id)
+                            REFERENCES users(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_reviews_product FOREIGN KEY (product_id)
+                            REFERENCES products(product_id) ON DELETE CASCADE,
+                        CONSTRAINT fk_reviews_order FOREIGN KEY (order_id)
+                            REFERENCES user_orders(order_id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                      COLLATE=utf8mb4_0900_ai_ci
+                """
+            else:
+                schema = """
+                    CREATE TABLE IF NOT EXISTS product_reviews (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        product_id VARCHAR(32) NOT NULL,
+                        order_id VARCHAR(32) NOT NULL,
+                        rating SMALLINT NOT NULL
+                            CHECK (rating BETWEEN 1 AND 5),
+                        content VARCHAR(500) NOT NULL,
+                        created_at VARCHAR(32) NOT NULL,
+                        updated_at VARCHAR(32) NOT NULL,
+                        CONSTRAINT uq_reviews_user_product
+                            UNIQUE (user_id, product_id),
+                        CONSTRAINT fk_reviews_user FOREIGN KEY (user_id)
+                            REFERENCES users(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_reviews_product FOREIGN KEY (product_id)
+                            REFERENCES products(product_id) ON DELETE CASCADE,
+                        CONSTRAINT fk_reviews_order FOREIGN KEY (order_id)
+                            REFERENCES user_orders(order_id) ON DELETE CASCADE
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_reviews_product_time
+                        ON product_reviews (product_id, updated_at)
+                """
+            with self.connect() as connection:
+                connection.executescript(schema)
+            self._reviews_schema_ready = True
 
     def seed_products(self, frame: pd.DataFrame) -> None:
         """Upsert catalog text while preserving stock changed by orders."""
@@ -1463,6 +1528,7 @@ class StoreDatabase:
         session_id: str,
     ) -> dict:
         """Cancel an owned demo order and restore its stock atomically."""
+        self.ensure_reviews_schema()
         with self.connect() as connection:
             order = connection.execute(
                 """
@@ -1516,6 +1582,25 @@ class StoreDatabase:
                     product_id,
                     "PURCHASE_CANCEL",
                 )
+                active_purchase = connection.execute(
+                    """
+                    SELECT 1
+                    FROM user_orders o
+                    JOIN order_items oi ON oi.order_id = o.order_id
+                    WHERE o.user_id = ? AND oi.product_id = ?
+                      AND o.status <> 'CANCELED_DEMO'
+                    LIMIT 1
+                    """,
+                    (int(user_id), product_id),
+                ).fetchone()
+                if active_purchase is None:
+                    connection.execute(
+                        """
+                        DELETE FROM product_reviews
+                        WHERE user_id = ? AND product_id = ?
+                        """,
+                        (int(user_id), product_id),
+                    )
         return {
             "order_id": order_id,
             "status": "CANCELED_DEMO",
@@ -1598,6 +1683,125 @@ class StoreDatabase:
                     "CART_ADD",
                 )
         return quantities
+
+    def save_product_review(
+        self,
+        user_id: int,
+        product_id: str,
+        rating: int,
+        content: str,
+    ) -> dict:
+        """Create or update one verified-purchase review per product."""
+        self.ensure_reviews_schema()
+        rating = int(rating)
+        content = unicodedata.normalize("NFKC", str(content)).strip()
+        if not 1 <= rating <= 5:
+            raise ValueError("별점은 1점부터 5점까지 선택해 주세요.")
+        if not 5 <= len(content) <= 500:
+            raise ValueError("후기는 5자 이상 500자 이하로 작성해 주세요.")
+        if self.kind == "mysql":
+            review_sql = """
+                INSERT INTO product_reviews(
+                    user_id, product_id, order_id, rating, content,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    order_id = VALUES(order_id),
+                    rating = VALUES(rating),
+                    content = VALUES(content),
+                    updated_at = VALUES(updated_at)
+            """
+        else:
+            review_sql = """
+                INSERT INTO product_reviews(
+                    user_id, product_id, order_id, rating, content,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (user_id, product_id) DO UPDATE SET
+                    order_id = EXCLUDED.order_id,
+                    rating = EXCLUDED.rating,
+                    content = EXCLUDED.content,
+                    updated_at = EXCLUDED.updated_at
+            """
+        with self.connect() as connection:
+            purchase = connection.execute(
+                """
+                SELECT o.order_id
+                FROM user_orders o
+                JOIN order_items oi ON oi.order_id = o.order_id
+                WHERE o.user_id = ? AND oi.product_id = ?
+                  AND o.status <> 'CANCELED_DEMO'
+                ORDER BY o.ordered_at DESC, o.order_id DESC
+                LIMIT 1
+                """,
+                (int(user_id), product_id),
+            ).fetchone()
+            if purchase is None:
+                raise ValueError("구매 완료한 상품만 후기를 작성할 수 있습니다.")
+            now = datetime.now().isoformat(timespec="seconds")
+            connection.execute(
+                review_sql,
+                (
+                    int(user_id),
+                    product_id,
+                    str(purchase["order_id"]),
+                    rating,
+                    content,
+                    now,
+                    now,
+                ),
+            )
+        return {
+            "product_id": product_id,
+            "rating": rating,
+            "content": content,
+            "updated_at": now,
+        }
+
+    def list_product_reviews(
+        self,
+        product_id: str,
+        limit: int = 20,
+    ) -> list[dict]:
+        self.ensure_reviews_schema()
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    r.user_id, u.nickname, r.rating, r.content,
+                    r.created_at, r.updated_at
+                FROM product_reviews r
+                JOIN users u ON u.id = r.user_id
+                WHERE r.product_id = ?
+                ORDER BY r.updated_at DESC, r.id DESC
+                LIMIT ?
+                """,
+                (product_id, int(limit)),
+            ).fetchall()
+        return [
+            {
+                "user_id": int(row["user_id"]),
+                "nickname": str(row["nickname"]),
+                "rating": int(row["rating"]),
+                "content": str(row["content"]),
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
+    def delete_product_review(self, user_id: int, product_id: str) -> None:
+        self.ensure_reviews_schema()
+        with self.connect() as connection:
+            deleted = connection.execute(
+                """
+                DELETE FROM product_reviews
+                WHERE user_id = ? AND product_id = ?
+                """,
+                (int(user_id), product_id),
+            )
+            if deleted.rowcount != 1:
+                raise ValueError("삭제할 후기를 찾을 수 없습니다.")
 
     def behavior_summary(self, user_id: int) -> dict:
         with self.connect() as connection:

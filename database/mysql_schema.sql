@@ -109,6 +109,27 @@ CREATE TABLE IF NOT EXISTS order_items (
         FOREIGN KEY (order_id) REFERENCES user_orders(order_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS product_reviews (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    product_id VARCHAR(32) NOT NULL,
+    order_id VARCHAR(32) NOT NULL,
+    rating TINYINT UNSIGNED NOT NULL,
+    content VARCHAR(500) NOT NULL,
+    created_at VARCHAR(32) NOT NULL,
+    updated_at VARCHAR(32) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_reviews_user_product (user_id, product_id),
+    KEY idx_reviews_product_time (product_id, updated_at),
+    CONSTRAINT chk_reviews_rating CHECK (rating BETWEEN 1 AND 5),
+    CONSTRAINT fk_reviews_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_reviews_product
+        FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+    CONSTRAINT fk_reviews_order
+        FOREIGN KEY (order_id) REFERENCES user_orders(order_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE OR REPLACE VIEW admin_user_overview AS
 SELECT
     id,

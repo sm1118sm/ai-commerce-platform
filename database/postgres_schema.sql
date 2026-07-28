@@ -110,6 +110,27 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS idx_order_items_order
     ON order_items (order_id);
 
+CREATE TABLE IF NOT EXISTS product_reviews (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    product_id VARCHAR(32) NOT NULL,
+    order_id VARCHAR(32) NOT NULL,
+    rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    content VARCHAR(500) NOT NULL,
+    created_at VARCHAR(32) NOT NULL,
+    updated_at VARCHAR(32) NOT NULL,
+    CONSTRAINT uq_reviews_user_product UNIQUE (user_id, product_id),
+    CONSTRAINT fk_reviews_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_reviews_product
+        FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+    CONSTRAINT fk_reviews_order
+        FOREIGN KEY (order_id) REFERENCES user_orders(order_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_product_time
+    ON product_reviews (product_id, updated_at);
+
 CREATE OR REPLACE VIEW admin_user_overview AS
 SELECT
     id,
