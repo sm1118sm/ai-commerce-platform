@@ -99,27 +99,39 @@ def _cnn_profile_similarity(
         vector_parts.append(matrix[index])
         vector_weights.append(1.0)
 
-    if query_text.strip():
-        query_vector = model.encoder.encode(
-            [query_text.strip()],
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )[0]
-        vector_parts.append(np.asarray(query_vector))
-        vector_weights.append(4.0)
+    known_profile_score = np.zeros(len(products))
+    if vector_parts:
+        profile_vector = np.average(
+            np.stack(vector_parts),
+            axis=0,
+            weights=np.asarray(vector_weights),
+        )
+        norm = float(np.linalg.norm(profile_vector))
+        if norm:
+            profile_vector = profile_vector / norm
+        known_profile_score = _normalized_matrix_similarity(
+            model,
+            profile_vector,
+        )
 
-    if not vector_parts:
-        return np.zeros(len(products))
-    profile_vector = np.average(
-        np.stack(vector_parts),
-        axis=0,
-        weights=np.asarray(vector_weights),
+    if not query_text.strip():
+        return known_profile_score
+    query_probabilities = model.encoder.predict_product_scores(
+        [query_text.strip()]
+    )[0]
+    class_scores = dict(
+        zip(model.encoder.product_classes, query_probabilities, strict=True)
     )
-    norm = float(np.linalg.norm(profile_vector))
-    if norm:
-        profile_vector = profile_vector / norm
-    return _normalized_matrix_similarity(model, profile_vector)
+    query_score = np.asarray(
+        [class_scores.get(str(product_id), 0.0) for product_id in products["id"]]
+    )
+    minimum = float(query_score.min())
+    maximum = float(query_score.max())
+    if maximum > minimum:
+        query_score = (query_score - minimum) / (maximum - minimum)
+    if not vector_parts:
+        return query_score
+    return 0.35 * known_profile_score + 0.65 * query_score
 
 
 def _cnn_behavior_similarity(

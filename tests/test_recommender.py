@@ -216,11 +216,13 @@ class RecommenderTest(unittest.TestCase):
         class CountingEncoder:
             def __init__(self) -> None:
                 self.calls = 0
+                self.product_classes = self_products["id"].tolist()
 
-            def encode(self, texts, **kwargs):
+            def predict_product_scores(self, texts):
                 self.calls += 1
-                return np.ones((len(texts), vector_size)) / np.sqrt(vector_size)
+                return np.ones((len(texts), vector_size)) / vector_size
 
+        self_products = self.products
         encoder = CountingEncoder()
         model = RecommendationModel(
             backend="cnn",
