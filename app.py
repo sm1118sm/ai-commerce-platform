@@ -999,7 +999,7 @@ def render_auth() -> None:
                 )
                 st.text_input("비밀번호", type="password", key="login_password")
                 st.checkbox(
-                    "2시간 로그인 유지",
+                    "로그인 유지",
                     value=True,
                     key="remember_login",
                     help=(
