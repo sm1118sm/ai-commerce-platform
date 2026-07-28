@@ -1281,6 +1281,9 @@ class StoreDatabase:
                     "name": str(row["name"]),
                     "quantity": int(row["quantity"]),
                     "unit_price": int(row["price"]),
+                    "remaining_stock": (
+                        int(row["stock"]) - int(row["quantity"])
+                    ),
                 }
                 items.append(item)
                 updated = connection.execute(
@@ -1400,6 +1403,7 @@ class StoreDatabase:
                     "name": str(product["name"]),
                     "quantity": quantity,
                     "unit_price": int(product["price"]),
+                    "remaining_stock": int(product["stock"]) - quantity,
                 }
             ],
             "total": total,

@@ -190,6 +190,12 @@ class DatabaseTest(unittest.TestCase):
         database.set_cart_quantity_async(user_id, "P002", 3).result()
         self.assertEqual(database.load_cart(user_id), {"P002": 3})
 
+        cart_stock_before = int(
+            database.load_products().loc[
+                lambda frame: frame["id"] == "P002",
+                "stock",
+            ].iloc[0]
+        )
         order = database.create_order(user_id, "test-session")
         self.assertTrue(order["order_id"].startswith("DEMO-"))
         self.assertEqual(database.load_cart(user_id), {})
@@ -201,6 +207,17 @@ class DatabaseTest(unittest.TestCase):
             product_price * 3,
         )
         self.assertIn("P002", database.purchased_product_ids(user_id))
+        cart_stock_after = int(
+            database.load_products().loc[
+                lambda frame: frame["id"] == "P002",
+                "stock",
+            ].iloc[0]
+        )
+        self.assertEqual(cart_stock_after, cart_stock_before - 3)
+        self.assertEqual(
+            order["items"][0]["remaining_stock"],
+            cart_stock_after,
+        )
         self.assertGreater(
             database.behavior_summary(user_id).get("PURCHASE", 0),
             0,
@@ -213,6 +230,12 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(
             snapshot["order_history"][0]["items"][0]["product_id"],
             "P002",
+        )
+        direct_stock_before = int(
+            database.load_products().loc[
+                lambda frame: frame["id"] == "P001",
+                "stock",
+            ].iloc[0]
         )
         direct_order = database.create_product_order(
             user_id,
@@ -232,6 +255,17 @@ class DatabaseTest(unittest.TestCase):
             * 2,
         )
         self.assertEqual(database.load_cart(user_id), {})
+        direct_stock_after = int(
+            database.load_products().loc[
+                lambda frame: frame["id"] == "P001",
+                "stock",
+            ].iloc[0]
+        )
+        self.assertEqual(direct_stock_after, direct_stock_before - 2)
+        self.assertEqual(
+            direct_order["items"][0]["remaining_stock"],
+            direct_stock_after,
+        )
 
     def test_users_are_isolated(self) -> None:
         database = self.database
