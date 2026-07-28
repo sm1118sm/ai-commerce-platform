@@ -41,6 +41,27 @@ def reset_test_database(database: StoreDatabase) -> None:
 
 
 class DatabaseHelpersTest(unittest.TestCase):
+    def test_failed_rollback_does_not_mask_original_connection_error(
+        self,
+    ) -> None:
+        class ClosedConnection:
+            def rollback(self) -> None:
+                raise RuntimeError("rollback failed")
+
+            def close(self) -> None:
+                raise RuntimeError("close failed")
+
+        database = StoreDatabase.__new__(StoreDatabase)
+        database.kind = "mysql"
+        with patch.object(
+            database,
+            "_mysql_raw_connection",
+            return_value=ClosedConnection(),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "query failed"):
+                with database.connect():
+                    raise RuntimeError("query failed")
+
     def test_schema_initialization_can_be_skipped_for_existing_production_db(
         self,
     ) -> None:

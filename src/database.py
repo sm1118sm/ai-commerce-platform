@@ -287,7 +287,10 @@ class StoreDatabase:
                         mincached=1,
                         maxcached=4,
                         blocking=True,
-                        ping=1,
+                        # Validate pooled connections again when a cursor is
+                        # requested so a database idle timeout cannot surface
+                        # during the first query after an app refresh.
+                        ping=3,
                         cursorclass=DictCursor,
                         **self.connection_args,
                     )
@@ -316,10 +319,18 @@ class StoreDatabase:
             yield connection
             connection.commit()
         except Exception:
-            connection.rollback()
+            try:
+                connection.rollback()
+            except Exception:
+                # Preserve the original query/connection error. A dead MySQL
+                # socket can also reject rollback and must not mask its cause.
+                pass
             raise
         finally:
-            connection.close()
+            try:
+                connection.close()
+            except Exception:
+                pass
 
     def initialize(self) -> None:
         """Create tables for the selected database without deleting data."""
