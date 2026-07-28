@@ -310,10 +310,48 @@ st.markdown(
         font-size: .72rem;
         font-weight: 800;
       }
-      .product-brand { color: var(--sp-muted); font-size: .72rem; font-weight: 800; letter-spacing:.06em; margin-top:.65rem; }
-      .product-name { font-size: 1.06rem; font-weight: 800; margin: .3rem 0; letter-spacing:-.025em; }
-      .product-description { color: var(--sp-muted); font-size: .84rem; min-height: 3.6rem; line-height:1.55; }
-      .product-meta { display:flex; justify-content:space-between; margin-top:.8rem; }
+      .product-brand {
+        color: var(--sp-muted);
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .06em;
+        margin-top: .65rem;
+        overflow-wrap: anywhere;
+      }
+      .product-name {
+        display: -webkit-box;
+        min-height: 3.1rem;
+        margin: .3rem 0;
+        overflow: hidden;
+        font-size: 1.06rem;
+        font-weight: 800;
+        line-height: 1.45;
+        letter-spacing: -.025em;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+      .product-description {
+        display: -webkit-box;
+        min-height: 3.9rem;
+        overflow: hidden;
+        color: var(--sp-muted);
+        font-size: .84rem;
+        line-height: 1.55;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+      }
+      .product-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: .3rem .65rem;
+        margin-top: .8rem;
+      }
       .reason {
         background: #f0fdf4; border: 1px solid #bbf7d0; color:#166534;
         border-radius: 12px; padding: .65rem; min-height: 4.2rem; font-size: .84rem;
@@ -360,6 +398,56 @@ st.markdown(
         font-size: .78rem;
       }
       .store-footer b { color: var(--sp-ink); }
+
+      @media (max-width: 1200px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+        .hero-summary {
+          max-width: 520px;
+        }
+        .header-status .status-chip:first-child {
+          display: none;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.auth-hero) {
+          flex-wrap: wrap;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.auth-hero)
+        > div[data-testid="stColumn"] {
+          min-width: min(100%, 420px);
+          flex: 1 1 420px;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.product-card) {
+          flex-wrap: wrap;
+          gap: .75rem;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.product-card)
+        > div[data-testid="stColumn"] {
+          flex: 1 1 calc(50% - .75rem) !important;
+          width: calc(50% - .75rem) !important;
+          min-width: min(100%, 260px) !important;
+        }
+        .block-container:has(.detail-page-marker)
+        div[data-testid="stHorizontalBlock"]:has(.product-card)
+        > div[data-testid="stColumn"] {
+          flex-basis: 100% !important;
+          width: 100% !important;
+          min-width: 100% !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(
+          input[aria-label="상품 검색"]
+        ) {
+          flex-wrap: wrap;
+          gap: .65rem;
+        }
+        div[data-testid="stHorizontalBlock"]:has(
+          input[aria-label="상품 검색"]
+        ) > div[data-testid="stColumn"] {
+          flex: 1 1 190px !important;
+          width: auto !important;
+          min-width: min(100%, 190px) !important;
+        }
+      }
 
       @media (max-width: 900px) {
         .block-container { padding-left: 1.15rem; padding-right: 1.15rem; }
@@ -410,12 +498,15 @@ st.markdown(
           gap: .35rem;
         }
         div[data-testid="stHorizontalBlock"]:has(.product-card) > div[data-testid="stColumn"] {
-          flex: 1 1 100%;
-          width: 100%;
-          min-width: 100%;
+          flex: 1 1 100% !important;
+          width: 100% !important;
+          min-width: 100% !important;
         }
         .product-card { min-height: 0; }
-        .product-description { min-height: 0; }
+        .product-name, .product-description {
+          min-height: 0;
+          -webkit-line-clamp: initial;
+        }
         .trust-strip { grid-template-columns: 1fr; margin-top: 2rem; }
         .store-footer { flex-direction: column; }
         body:has(.store-shell-marker) div[data-testid="stTabs"] > div[data-baseweb="tab-list"] {
