@@ -244,7 +244,12 @@ st.markdown(
       .st-key-store_header button svg {
         flex: 0 0 auto;
       }
-      .brand-lockup { display: flex; align-items: center; gap: .75rem; }
+      .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        transform: translateY(-6px);
+      }
       .brand-mark {
         display: grid;
         place-items: center;
