@@ -172,6 +172,15 @@ class DatabaseTest(unittest.TestCase):
             database.behavior_summary(user_id).get("PURCHASE", 0),
             0,
         )
+        snapshot = database.load_storefront_snapshot(user_id)
+        self.assertEqual(
+            snapshot["order_history"][0]["order_id"],
+            order["order_id"],
+        )
+        self.assertEqual(
+            snapshot["order_history"][0]["items"][0]["product_id"],
+            "P002",
+        )
 
     def test_users_are_isolated(self) -> None:
         database = self.database

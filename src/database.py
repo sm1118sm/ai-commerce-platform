@@ -404,34 +404,6 @@ class StoreDatabase:
         now = datetime.now().isoformat(timespec="seconds")
         try:
             with self.connect() as connection:
-                duplicate_email = connection.execute(
-                    """
-                    SELECT 1 FROM users
-                    WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
-                    """,
-                    (email,),
-                ).fetchone()
-                if duplicate_email:
-                    raise ValueError(
-                        "이미 가입된 이메일입니다. 한 이메일당 하나의 계정만 만들 수 있습니다."
-                    )
-                duplicate_nickname = connection.execute(
-                    """
-                    SELECT 1 FROM users
-                    WHERE LOWER(TRIM(nickname)) = LOWER(TRIM(?))
-                    """,
-                    (nickname,),
-                ).fetchone()
-                if duplicate_nickname:
-                    raise ValueError("이미 사용 중인 닉네임입니다.")
-                duplicate_phone = connection.execute(
-                    "SELECT 1 FROM users WHERE phone_number = ?",
-                    (phone_number,),
-                ).fetchone()
-                if duplicate_phone:
-                    raise ValueError(
-                        "이미 가입된 전화번호입니다. 한 번호당 하나의 계정만 만들 수 있습니다."
-                    )
                 insert_sql = """
                     INSERT INTO users(
                         email, password_hash, nickname, phone_number,
@@ -478,7 +450,15 @@ class StoreDatabase:
             raise ValueError(
                 "이미 가입된 이메일입니다. 한 이메일당 하나의 계정만 만들 수 있습니다."
             ) from error
-        return self.get_user(user_id)
+        return {
+            "id": user_id,
+            "email": email,
+            "nickname": nickname,
+            "role": "USER",
+            "status": "ACTIVE",
+            "created_at": now,
+            "last_login_at": None,
+        }
 
     def email_is_available(self, email: str) -> bool:
         email = validate_email(email)
@@ -707,12 +687,6 @@ class StoreDatabase:
         session_id: str,
     ) -> bool:
         with self.connect() as connection:
-            product = connection.execute(
-                "SELECT 1 FROM products WHERE product_id = ?",
-                (product_id,),
-            ).fetchone()
-            if product is None:
-                raise ValueError("존재하지 않는 상품입니다.")
             exists = connection.execute(
                 """
                 SELECT 1 FROM user_favorites
@@ -741,13 +715,12 @@ class StoreDatabase:
                         datetime.now().isoformat(timespec="seconds"),
                     ),
                 )
-            self._log_behavior(
-                connection,
-                int(user_id),
-                session_id,
-                product_id,
-                action,
-            )
+        self.log_behavior_async(
+            int(user_id),
+            session_id,
+            product_id,
+            action,
+        )
         return not bool(exists)
 
     def load_cart(self, user_id: int) -> dict[str, int]:
@@ -827,6 +800,34 @@ class StoreDatabase:
                 UNION ALL
 
                 SELECT
+                    'order', o.order_id, o.status, NULL,
+                    o.total, o.quantity, o.ordered_at
+                FROM user_orders o
+                JOIN (
+                    SELECT order_id
+                    FROM user_orders
+                    WHERE user_id = ?
+                    ORDER BY ordered_at DESC, order_id DESC
+                    LIMIT 5
+                ) recent_orders ON recent_orders.order_id = o.order_id
+
+                UNION ALL
+
+                SELECT
+                    'order_item', oi.order_id, oi.product_id,
+                    NULL, oi.quantity, oi.unit_price, oi.product_name
+                FROM order_items oi
+                JOIN (
+                    SELECT order_id
+                    FROM user_orders
+                    WHERE user_id = ?
+                    ORDER BY ordered_at DESC, order_id DESC
+                    LIMIT 5
+                ) recent_orders ON recent_orders.order_id = oi.order_id
+
+                UNION ALL
+
+                SELECT
                     'trend', product_id, action_type, NULL,
                     NULL, NULL, NULL
                 FROM behavior_logs
@@ -840,6 +841,8 @@ class StoreDatabase:
                     int(user_id),
                     behavior_cutoff,
                     int(user_id),
+                    int(user_id),
+                    int(user_id),
                     trend_cutoff,
                 ),
             ).fetchall()
@@ -852,8 +855,11 @@ class StoreDatabase:
             "behavior_weights": {},
             "trend_scores": {},
             "purchased_ids": set(),
+            "order_history": [],
         }
         raw_trends: dict[str, float] = {}
+        orders: dict[str, dict] = {}
+        order_items: dict[str, list[dict]] = {}
         for row in rows:
             section = str(row["section"])
             key = str(row["key_text"]) if row["key_text"] is not None else ""
@@ -885,6 +891,24 @@ class StoreDatabase:
                 )
             elif section == "purchased":
                 snapshot["purchased_ids"].add(key)
+            elif section == "order":
+                orders[key] = {
+                    "order_id": key,
+                    "total": int(row["number_value"]),
+                    "quantity": int(row["second_number_value"]),
+                    "status": str(row["value_text"]),
+                    "ordered_at": str(row["created_at"]),
+                    "items": [],
+                }
+            elif section == "order_item":
+                order_items.setdefault(key, []).append(
+                    {
+                        "product_id": str(row["value_text"]),
+                        "name": str(row["created_at"]),
+                        "quantity": int(row["number_value"]),
+                        "unit_price": int(row["second_number_value"]),
+                    }
+                )
             elif section == "trend":
                 action_type = str(row["value_text"])
                 raw_trends[key] = raw_trends.get(key, 0) + max(
@@ -899,6 +923,14 @@ class StoreDatabase:
                 product_id: score / trend_maximum
                 for product_id, score in raw_trends.items()
             }
+        for order_id, items in order_items.items():
+            if order_id in orders:
+                orders[order_id]["items"] = items
+        snapshot["order_history"] = sorted(
+            orders.values(),
+            key=lambda order: (order["ordered_at"], order["order_id"]),
+            reverse=True,
+        )[:5]
         return snapshot
 
     def add_to_cart(
@@ -948,13 +980,12 @@ class StoreDatabase:
                     datetime.now().isoformat(timespec="seconds"),
                 ),
             )
-            self._log_behavior(
-                connection,
-                int(user_id),
-                session_id,
-                product_id,
-                "CART_ADD",
-            )
+        self.log_behavior_async(
+            int(user_id),
+            session_id,
+            product_id,
+            "CART_ADD",
+        )
         return quantity
 
     def set_cart_quantity(
@@ -1015,13 +1046,12 @@ class StoreDatabase:
                 """,
                 (int(user_id), product_id),
             )
-            self._log_behavior(
-                connection,
-                int(user_id),
-                session_id,
-                product_id,
-                "CART_REMOVE",
-            )
+        self.log_behavior_async(
+            int(user_id),
+            session_id,
+            product_id,
+            "CART_REMOVE",
+        )
 
     def _log_behavior(
         self,
@@ -1068,6 +1098,48 @@ class StoreDatabase:
                 action_type,
                 search_keyword,
             )
+
+    def log_behavior_async(
+        self,
+        user_id: int,
+        session_id: str,
+        product_id: str | None,
+        action_type: str,
+        search_keyword: str | None = None,
+    ) -> None:
+        """Persist non-critical interaction telemetry off the click path."""
+        Thread(
+            target=self._record_behavior,
+            args=(
+                int(user_id),
+                session_id,
+                product_id,
+                action_type,
+                search_keyword,
+            ),
+            daemon=True,
+        ).start()
+
+    def _record_behavior(
+        self,
+        user_id: int,
+        session_id: str,
+        product_id: str | None,
+        action_type: str,
+        search_keyword: str | None,
+    ) -> None:
+        try:
+            self.log_behavior(
+                user_id,
+                session_id,
+                product_id,
+                action_type,
+                search_keyword,
+            )
+        except Exception:
+            # Shopping state already committed; telemetry must not make the
+            # successful click look like a failure.
+            return
 
     def user_behavior_weights(self, user_id: int) -> dict[str, float]:
         cutoff = (datetime.now() - timedelta(days=90)).isoformat(timespec="seconds")

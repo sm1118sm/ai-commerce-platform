@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import os
+from time import perf_counter
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ from tests.test_database import reset_test_database
 ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE_URL = os.environ.get("STYLEPICK_TEST_DATABASE_URL", "")
 APP_TEST_TIMEOUT_SECONDS = 120
+LOGIN_RESPONSE_BUDGET_SECONDS = 2.0
 
 
 @unittest.skipUnless(
@@ -157,13 +159,25 @@ class AppSmokeTest(unittest.TestCase):
                 field for field in app.text_input
                 if field.key == "login_password"
             ).input("Callback-test!")
-            next(
+            login_button = next(
                 button for button in app.button
                 if button.label == "로그인"
-            ).click().run()
+            )
+            login_started_at = perf_counter()
+            login_button.click().run()
+            login_elapsed_seconds = perf_counter() - login_started_at
 
             self.assertFalse(app.exception)
             self.assertIsNotNone(app.session_state["user_id"])
+            self.assertLess(
+                login_elapsed_seconds,
+                LOGIN_RESPONSE_BUDGET_SECONDS,
+                (
+                    "로그인 버튼 응답이 "
+                    f"{login_elapsed_seconds:.3f}초로 "
+                    f"{LOGIN_RESPONSE_BUDGET_SECONDS:.1f}초 기준을 초과했습니다."
+                ),
+            )
             self.assertEqual(
                 [tab.label for tab in app.tabs],
                 ["🛍️ 상품 탐색", "✨ AI 추천", "♥ 찜 목록", "🛒 장바구니·주문"],
