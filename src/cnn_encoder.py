@@ -40,6 +40,9 @@ class TextCnnEncoder:
             size: artifact[f"conv_bias_{size}"].astype(np.float32)
             for size in self.kernel_sizes
         }
+        self.output_weight = artifact["output_weight"].astype(np.float32)
+        self.output_bias = artifact["output_bias"].astype(np.float32)
+        self.product_classes = artifact["product_classes"].tolist()
 
     def _token_ids(self, text: str) -> np.ndarray:
         normalized = normalize_text(text)
@@ -55,7 +58,7 @@ class TextCnnEncoder:
             dtype=np.int64,
         )
 
-    def _encode_one(self, text: str) -> np.ndarray:
+    def _features_one(self, text: str) -> np.ndarray:
         embedded = self.embedding[self._token_ids(text)]
         pooled_parts: list[np.ndarray] = []
         for size in self.kernel_sizes:
@@ -71,7 +74,10 @@ class TextCnnEncoder:
             )
             activations += self.conv_biases[size]
             pooled_parts.append(np.maximum(activations, 0.0).max(axis=0))
-        vector = np.concatenate(pooled_parts).astype(np.float32)
+        return np.concatenate(pooled_parts).astype(np.float32)
+
+    def _encode_one(self, text: str) -> np.ndarray:
+        vector = self._features_one(text)
         norm = float(np.linalg.norm(vector))
         return vector / norm if norm else vector
 
@@ -84,3 +90,11 @@ class TextCnnEncoder:
     ) -> np.ndarray:
         del normalize_embeddings, convert_to_numpy, show_progress_bar
         return np.stack([self._encode_one(text) for text in texts])
+
+    def predict_product_scores(self, texts: list[str]) -> np.ndarray:
+        """Return TextCNN product-class probabilities for natural language."""
+        features = np.stack([self._features_one(text) for text in texts])
+        logits = features @ self.output_weight + self.output_bias
+        logits -= logits.max(axis=1, keepdims=True)
+        probabilities = np.exp(logits)
+        return probabilities / probabilities.sum(axis=1, keepdims=True)

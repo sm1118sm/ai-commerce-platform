@@ -40,9 +40,9 @@ def train(
     vocabulary = build_vocabulary(texts)
     token_to_id = {token: index for index, token in enumerate(vocabulary)}
     max_length = min(220, max(len(text) for text in texts))
-    kernel_sizes = (2, 3, 4)
-    embedding_size = 24
-    filters = 16
+    kernel_sizes = (2, 3, 4, 5, 6)
+    embedding_size = 32
+    filters = 20
 
     def token_ids(text: str) -> np.ndarray:
         tokens = list(text[:max_length])

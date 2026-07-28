@@ -36,7 +36,7 @@ docker compose up -d --build
 - 회원 DB 확인: `http://localhost:8081`
 - 종료: `docker compose down`
 
-추천 모델은 TextCNN 하나만 사용합니다. 학습된 약 68KB 모델을 NumPy로
+추천 모델은 TextCNN 하나만 사용합니다. 학습된 약 124KB 모델을 NumPy로
 추론하므로 무료 호스팅에서도 별도의 GPU나 무거운 딥러닝 런타임이
 필요하지 않습니다.
 
