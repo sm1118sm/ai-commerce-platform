@@ -188,6 +188,10 @@ class ButtonLatencyRun:
         for _ in range(REPEAT_COUNT):
             self.click(app, "상품 상세", key=detail_key)
             self.click(app, "상세에서 돌아가기", key="detail_back")
+            if app.session_state["user_id"] is None:
+                raise AssertionError(
+                    "상품 상세에서 돌아간 뒤 로그인 세션이 사라졌습니다."
+                )
 
         self.click(app, "상세 동작 준비", key=detail_key, record=False)
         for _ in range(REPEAT_COUNT):
