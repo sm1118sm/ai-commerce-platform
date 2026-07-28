@@ -767,7 +767,10 @@ def submit_login() -> None:
             database.authenticate(
                 st.session_state.get("login_email", ""),
                 st.session_state.get("login_password", ""),
-            )
+            ),
+            persist_session=bool(
+                st.session_state.get("remember_login", True)
+            ),
         )
         st.session_state.auth_notice = (
             "DB에 저장된 계정 정보를 확인하고 로그인했습니다."
@@ -995,6 +998,15 @@ def render_auth() -> None:
                     key="login_email",
                 )
                 st.text_input("비밀번호", type="password", key="login_password")
+                st.checkbox(
+                    "2시간 로그인 유지",
+                    value=True,
+                    key="remember_login",
+                    help=(
+                        "새로고침하거나 브라우저를 닫았다 다시 접속해도 "
+                        "최대 2시간 동안 로그인 상태를 유지합니다."
+                    ),
+                )
                 st.form_submit_button(
                     "로그인",
                     type="primary",
