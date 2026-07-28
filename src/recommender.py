@@ -185,7 +185,7 @@ def recommend(
     purchased_ids: set[str] | None = None,
     query_text: str = "",
 ) -> pd.DataFrame:
-    """Rank products with explicit taste, recent behavior, and recent trends."""
+    """Retrieve CNN candidates, then rank them with commerce signals."""
     behavior_product_weights = behavior_product_weights or {}
     trend_product_scores = trend_product_scores or {}
     purchased_ids = purchased_ids or set()
@@ -212,6 +212,18 @@ def recommend(
         model,
         positive_behavior,
     )
+    has_content_signal = bool(
+        query_text.strip() or interests or favorite_ids
+    )
+    has_behavior_signal = bool(positive_behavior)
+    if has_content_signal and has_behavior_signal:
+        retrieval_score = 0.60 * content_score + 0.40 * behavior_score
+    elif has_content_signal:
+        retrieval_score = content_score
+    elif has_behavior_signal:
+        retrieval_score = behavior_score
+    else:
+        retrieval_score = np.zeros(len(products))
     negative_behavior_score = np.array(
         [
             min(1.0, abs(float(negative_behavior.get(product_id, 0))) / 5.0)
@@ -237,6 +249,8 @@ def recommend(
     )
     if not trend_product_scores:
         trend_score = popularity_score
+    if not has_content_signal and not has_behavior_signal:
+        retrieval_score = 0.55 * trend_score + 0.45 * popularity_score
 
     if (
         not query_text.strip()
@@ -267,6 +281,7 @@ def recommend(
     ranked = products.copy()
     ranked["content_score"] = content_score
     ranked["text_score"] = content_score
+    ranked["retrieval_score"] = retrieval_score
     ranked["category_score"] = category_score
     ranked["behavior_score"] = behavior_score
     ranked["negative_behavior_score"] = negative_behavior_score
@@ -280,6 +295,11 @@ def recommend(
     ranked = ranked[~ranked["id"].isin(excluded)]
     if "stock" in ranked:
         ranked = ranked[ranked["stock"] > 0]
+    candidate_size = min(len(ranked), max(top_n, 20))
+    ranked = ranked.sort_values(
+        ["retrieval_score", "popularity"],
+        ascending=False,
+    ).head(candidate_size)
     ranked = ranked.sort_values(
         ["recommendation_score", "popularity"],
         ascending=False,

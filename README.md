@@ -14,7 +14,7 @@
 - PBKDF2 비밀번호 해시, 로그인, 회원탈퇴
 - 선택 시 새로고침과 재방문에도 유지되는 2시간 보안 로그인
 - 회원별 찜, 장바구니, 모의 주문, 행동 로그
-- 딥러닝 TextCNN과 사용자 행동을 결합한 회원별 추천
+- TextCNN 후보 검색과 쇼핑 신호 랭킹을 결합한 2단계 회원별 추천
 - 추천 상품별 설명과 신규 사용자를 위한 콜드 스타트 추천
 - 데스크톱·모바일 반응형 이커머스 UI
 - 로컬 MySQL과 Aiven 관리형 MySQL 지원
@@ -85,7 +85,7 @@ URI에는 DB 비밀번호가 포함되므로 README, GitHub Issue, 채팅 또는
 | 영역 | 기술 |
 | --- | --- |
 | 웹 | Streamlit, 반응형 CSS |
-| 추천 | TextCNN, NumPy 추론, 회원별 행동 가중치 |
+| 추천 | TextCNN Two-Tower 후보 검색, 하이브리드 랭킹, NumPy 추론 |
 | 데이터 | MySQL 8.4, PyMySQL, pandas |
 | 배포 | Streamlit Community Cloud, Render, GitHub Actions, Aiven |
 | 품질 | unittest, MySQL/PostgreSQL CI 통합 테스트 |

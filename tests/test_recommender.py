@@ -89,6 +89,7 @@ class RecommenderTest(unittest.TestCase):
             top_n=10,
         )
         self.assertTrue(result["recommendation_score"].between(0, 1).all())
+        self.assertTrue(result["retrieval_score"].between(0, 1).all())
 
     def test_recent_behavior_changes_recommendations(self) -> None:
         result = recommend(
