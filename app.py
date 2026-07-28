@@ -607,10 +607,26 @@ st.markdown(
         }
         .st-key-store_header div[data-testid="stHorizontalBlock"]
         > div[data-testid="stColumn"] {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
           width: auto !important;
+          height: 42px;
           min-width: 0 !important;
           max-width: none !important;
           flex: none !important;
+        }
+        .st-key-store_header div[data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"]
+        > div[data-testid="stVerticalBlock"] {
+          width: 100%;
+          height: 42px;
+          justify-content: center;
+          gap: 0;
+        }
+        .st-key-store_header .brand-lockup {
+          height: 42px;
+          justify-content: center;
         }
         .st-key-store_header .brand-name,
         .st-key-store_header .brand-caption {
@@ -618,7 +634,9 @@ st.markdown(
         }
         .st-key-store_header button {
           width: 100%;
-          min-height: 38px;
+          height: 42px;
+          min-height: 42px;
+          padding-block: 0;
           padding-inline: .55rem;
           font-size: .76rem;
           overflow: hidden;
