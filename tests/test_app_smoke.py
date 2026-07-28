@@ -51,6 +51,11 @@ class AppSmokeTest(unittest.TestCase):
                 [tab.label for tab in app.tabs],
                 ["로그인", "회원가입"],
             )
+            rendered_markdown = " ".join(
+                markdown.value for markdown in app.markdown
+            )
+            self.assertNotIn("비밀번호 해시 저장", rendered_markdown)
+            self.assertNotIn("모바일 반응형", rendered_markdown)
 
     def test_signup_availability_buttons_update_state(self) -> None:
         with patch.dict(
