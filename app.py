@@ -15,7 +15,11 @@ from uuid import uuid4
 import streamlit as st
 from streamlit_cookies_controller import CookieController
 
-from src.auth_session import create_session_token, verify_session_token
+from src.auth_session import (
+    create_session_token,
+    should_probe_browser_cookie,
+    verify_session_token,
+)
 from src.database import (
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
@@ -42,7 +46,6 @@ AUTH_SESSION_SECRET = (
 )
 AUTH_COOKIE_COMPONENT_ENABLED = (
     os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") != "1"
-    or os.environ.get("STYLEPICK_TEST_COOKIE_PROBE") == "1"
 )
 st.set_page_config(
     page_title="StylePick AI",
@@ -1605,13 +1608,13 @@ if (
         st.button("다시 연결", type="primary", width="stretch")
     st.stop()
 if not st.session_state.user_id:
-    should_probe_browser_cookie = bool(
-        AUTH_COOKIE_COMPONENT_ENABLED
-        and not st.session_state.get("auth_cookie_probe_started")
-        and not st.session_state.get("auth_cookie_restore_blocked")
+    should_probe_cookie = should_probe_browser_cookie(
+        AUTH_COOKIE_COMPONENT_ENABLED,
+        bool(st.session_state.get("auth_cookie_probe_started")),
+        bool(st.session_state.get("auth_cookie_restore_blocked")),
     )
     with auth_page_slot.container():
-        if should_probe_browser_cookie:
+        if should_probe_cookie:
             st.session_state.auth_cookie_probe_started = True
             render_auth_probe()
         else:

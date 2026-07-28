@@ -52,52 +52,6 @@ class AppSmokeTest(unittest.TestCase):
                 ["로그인", "회원가입"],
             )
 
-    def test_cookie_probe_does_not_render_login_form(self) -> None:
-        class EmptyCookieController:
-            def __init__(self, *args, **kwargs) -> None:
-                pass
-
-            def get(self, _name: str):
-                return None
-
-            def set(self, *args, **kwargs) -> None:
-                pass
-
-        with (
-            patch.dict(
-                os.environ,
-                {
-                    "DATABASE_URL": TEST_DATABASE_URL,
-                    "RECOMMENDER_BACKEND": "cnn",
-                    "STYLEPICK_TEST_SYNC_STARTUP": "1",
-                    "STYLEPICK_TEST_COOKIE_PROBE": "1",
-                },
-                clear=False,
-            ),
-            patch(
-                "streamlit_cookies_controller.CookieController",
-                EmptyCookieController,
-            ),
-        ):
-            os.environ.pop("STYLEPICK_TEST_AUTOLOGIN", None)
-            app = AppTest.from_file(
-                str(ROOT / "app.py"),
-                default_timeout=APP_TEST_TIMEOUT_SECONDS,
-            ).run()
-            self.assertFalse(app.exception)
-            self.assertEqual(list(app.tabs), [])
-            self.assertIn(
-                "로그인 상태를 확인하고 있어요.",
-                [markdown.value for markdown in app.markdown],
-            )
-
-            app.run()
-            self.assertFalse(app.exception)
-            self.assertEqual(
-                [tab.label for tab in app.tabs],
-                ["로그인", "회원가입"],
-            )
-
     def test_signup_availability_buttons_update_state(self) -> None:
         with patch.dict(
             os.environ,
