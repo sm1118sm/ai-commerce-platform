@@ -4,7 +4,7 @@ import os
 import unittest
 from pathlib import Path
 from time import perf_counter
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src.catalog import load_products
 from src.database import (
@@ -43,6 +43,19 @@ def reset_test_database(database: StoreDatabase) -> None:
 
 
 class DatabaseHelpersTest(unittest.TestCase):
+    def test_reset_connection_pool_discards_stale_mysql_pool(self) -> None:
+        database = StoreDatabase(
+            "mysql://stylepick:secret@db.example.com/stylepick",
+            initialize_schema=False,
+        )
+        stale_pool = Mock()
+        database._mysql_pool = stale_pool
+
+        database.reset_connection_pool()
+
+        self.assertIsNone(database._mysql_pool)
+        stale_pool.close.assert_called_once_with()
+
     def test_failed_rollback_does_not_mask_original_connection_error(
         self,
     ) -> None:
