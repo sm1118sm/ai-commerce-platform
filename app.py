@@ -2491,8 +2491,8 @@ with st.sidebar:
     if profile_error := st.session_state.get("profile_error"):
         st.error(profile_error)
     st.caption(
-        "닉네임·전화번호·비밀번호는 화면 상단의 프로필 버튼에서 "
-        "현재 비밀번호 확인 후 수정할 수 있습니다."
+        "닉네임·전화번호·비밀번호 수정과 계정 관리는 "
+        "화면 상단의 프로필 버튼에서 할 수 있습니다."
     )
     st.divider()
     sidebar_orders = st.session_state.get("order_history", [])
@@ -2565,25 +2565,6 @@ with st.sidebar:
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
     )
     st.button("로그아웃", width="stretch", on_click=logout_user)
-    with st.expander("회원탈퇴"):
-        st.warning("탈퇴하면 계정, 취향, 찜, 장바구니, 행동 및 주문 데이터가 즉시 삭제됩니다.")
-        with st.form("delete_account_form"):
-            st.text_input(
-                "현재 비밀번호",
-                type="password",
-                key="delete_account_password",
-            )
-            delete_confirmed = st.checkbox(
-                "삭제된 데이터는 복구할 수 없음을 확인했습니다."
-            )
-            st.form_submit_button(
-                "계정 영구 삭제",
-                disabled=not delete_confirmed,
-                width="stretch",
-                on_click=delete_current_user,
-            )
-            if delete_error := st.session_state.get("delete_account_error"):
-                st.error(delete_error)
 
 behavior_weights = st.session_state.behavior_weights
 trend_scores = st.session_state.trend_scores
@@ -2671,6 +2652,32 @@ with st.container(key="store_header"):
                     width="stretch",
                     on_click=save_header_account_settings,
                 )
+        st.divider()
+        st.caption("계정 관리")
+        with st.expander("회원탈퇴"):
+            st.warning(
+                "탈퇴하면 계정, 취향, 찜, 장바구니, 행동 및 주문 "
+                "데이터가 즉시 삭제됩니다."
+            )
+            with st.form("delete_account_form"):
+                st.text_input(
+                    "현재 비밀번호",
+                    type="password",
+                    key="delete_account_password",
+                )
+                delete_confirmed = st.checkbox(
+                    "삭제된 데이터는 복구할 수 없음을 확인했습니다."
+                )
+                st.form_submit_button(
+                    "계정 영구 삭제",
+                    disabled=not delete_confirmed,
+                    width="stretch",
+                    on_click=delete_current_user,
+                )
+                if delete_error := st.session_state.get(
+                    "delete_account_error"
+                ):
+                    st.error(delete_error)
 
     with favorite_col.popover(
         f"♥ {len(st.session_state.favorites)}",
