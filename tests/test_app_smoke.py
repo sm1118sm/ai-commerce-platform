@@ -332,6 +332,19 @@ class AppSmokeTest(unittest.TestCase):
             self.assertIsNotNone(
                 app.session_state["selected_product_id"]
             )
+            self.assertTrue(
+                any(
+                    button.label == "로그아웃"
+                    for button in app.button
+                ),
+                "상품 상세 화면에서도 데스크톱 사이드바 콘텐츠를 유지해야 합니다.",
+            )
+            self.assertTrue(
+                any(
+                    expander.label.startswith("결제 내역 ·")
+                    for expander in app.expander
+                )
+            )
 
             next(
                 button for button in app.button
