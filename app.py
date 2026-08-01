@@ -22,7 +22,6 @@ from src.auth_session import (
     verify_session_token,
 )
 from src.database import (
-    DatabaseUnavailableError,
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
     format_phone_input,
@@ -74,6 +73,16 @@ DATABASE_RECOVERY_MESSAGE = (
 def prepare_database_retry() -> None:
     """Discard a failed cached startup future before Streamlit reruns."""
     get_database_future.clear()
+
+
+def is_database_unavailable_error(error: Exception) -> bool:
+    """Recognize DB downtime without importing a newly added exception class.
+
+    Streamlit Community Cloud can rerun ``app.py`` while an older
+    ``src.database`` module is still cached. Comparing the exception name keeps
+    a hot deployment from failing its import before the process restarts.
+    """
+    return type(error).__name__ == "DatabaseUnavailableError"
 
 
 # Streamlit Cloud can keep ``st.cache_resource`` values across hot deploys.
@@ -1190,7 +1199,9 @@ def submit_login() -> None:
         )
     except ValueError as error:
         st.session_state.login_error = str(error)
-    except DatabaseUnavailableError:
+    except RuntimeError as error:
+        if not is_database_unavailable_error(error):
+            raise
         prepare_database_retry()
         st.session_state.login_error = DATABASE_RECOVERY_MESSAGE
 
@@ -1198,7 +1209,9 @@ def submit_login() -> None:
 def start_demo() -> None:
     try:
         login_user(database.ensure_demo_user())
-    except DatabaseUnavailableError:
+    except RuntimeError as error:
+        if not is_database_unavailable_error(error):
+            raise
         prepare_database_retry()
         st.session_state.login_error = DATABASE_RECOVERY_MESSAGE
 
@@ -1223,7 +1236,9 @@ def submit_signup() -> None:
         )
     except ValueError as error:
         st.session_state.signup_error = str(error)
-    except DatabaseUnavailableError:
+    except RuntimeError as error:
+        if not is_database_unavailable_error(error):
+            raise
         prepare_database_retry()
         st.session_state.signup_error = DATABASE_RECOVERY_MESSAGE
 
@@ -1345,7 +1360,9 @@ def check_signup_email_availability() -> None:
     except ValueError as error:
         st.session_state.verified_signup_email = None
         st.session_state.signup_email_error = str(error)
-    except DatabaseUnavailableError:
+    except RuntimeError as error:
+        if not is_database_unavailable_error(error):
+            raise
         prepare_database_retry()
         st.session_state.verified_signup_email = None
         st.session_state.signup_email_error = DATABASE_RECOVERY_MESSAGE
@@ -1365,7 +1382,9 @@ def check_signup_nickname_availability() -> None:
     except ValueError as error:
         st.session_state.verified_signup_nickname = None
         st.session_state.signup_nickname_error = str(error)
-    except DatabaseUnavailableError:
+    except RuntimeError as error:
+        if not is_database_unavailable_error(error):
+            raise
         prepare_database_retry()
         st.session_state.verified_signup_nickname = None
         st.session_state.signup_nickname_error = DATABASE_RECOVERY_MESSAGE
@@ -2386,7 +2405,9 @@ auth_page_slot.markdown(
 
 try:
     database = database_future.result()
-except DatabaseUnavailableError:
+except RuntimeError as error:
+    if not is_database_unavailable_error(error):
+        raise
     logging.exception("StylePick database is unavailable during initialization")
     prepare_database_retry()
     st.warning(DATABASE_RECOVERY_MESSAGE, icon="⏳")
