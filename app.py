@@ -150,6 +150,12 @@ st.markdown(
         padding-top: 5rem;
         padding-bottom: 6rem;
       }
+      .block-container:has(.store-shell-marker) {
+        padding-top: max(
+          4rem,
+          calc(3rem + env(safe-area-inset-top, 0px))
+        );
+      }
       .block-container:has(.detail-page-marker) {
         position: fixed;
         inset: 3rem 0 0;
