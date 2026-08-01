@@ -650,9 +650,9 @@ st.markdown(
           padding: 4.5rem 1rem 2rem;
         }
         .st-key-detail_back_bar {
-          position: sticky;
-          top: 3.75rem;
-          left: auto;
+          position: absolute;
+          top: .45rem;
+          left: 1rem;
         }
       }
 
@@ -661,6 +661,9 @@ st.markdown(
         .stApp:has(.detail-page-marker)
         [data-testid="stSidebarCollapsedControl"] {
           display: none !important;
+        }
+        .st-key-detail_back_bar {
+          top: 3.45rem;
         }
         .block-container { padding-left: 1.15rem; padding-right: 1.15rem; }
         .hero { grid-template-columns: 1fr; }
