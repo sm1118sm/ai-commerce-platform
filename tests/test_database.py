@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from src.catalog import load_products
 from src.database import (
+    DatabaseUnavailableError,
     StoreDatabase,
     database_kind,
     format_phone_input,
@@ -43,6 +44,124 @@ def reset_test_database(database: StoreDatabase) -> None:
 
 
 class DatabaseHelpersTest(unittest.TestCase):
+    def test_transient_mysql_connection_is_retried(self) -> None:
+        import pymysql
+
+        database = StoreDatabase(
+            "mysql://stylepick:secret@db.example.com/stylepick",
+            initialize_schema=False,
+        )
+        recovered_connection = Mock()
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "STYLEPICK_DB_CONNECT_ATTEMPTS": "3",
+                    "STYLEPICK_DB_RETRY_BASE_SECONDS": "0.01",
+                },
+            ),
+            patch.object(
+                database,
+                "_mysql_raw_connection",
+                side_effect=[
+                    pymysql.err.OperationalError(2003, "server unavailable"),
+                    recovered_connection,
+                ],
+            ) as connect,
+            patch.object(database, "reset_connection_pool") as reset_pool,
+            patch("src.database.sleep") as retry_sleep,
+        ):
+            self.assertIs(
+                database._mysql_connection_with_retry(),
+                recovered_connection,
+            )
+
+        self.assertEqual(connect.call_count, 2)
+        reset_pool.assert_called_once_with()
+        retry_sleep.assert_called_once_with(0.01)
+
+    def test_mysql_retry_exhaustion_hides_operational_error(self) -> None:
+        import pymysql
+
+        database = StoreDatabase(
+            "mysql://stylepick:secret@db.example.com/stylepick",
+            initialize_schema=False,
+        )
+        with (
+            patch.dict(
+                os.environ,
+                {"STYLEPICK_DB_CONNECT_ATTEMPTS": "2"},
+            ),
+            patch.object(
+                database,
+                "_mysql_raw_connection",
+                side_effect=pymysql.err.OperationalError(
+                    2003,
+                    "server unavailable",
+                ),
+            ),
+            patch.object(database, "reset_connection_pool"),
+            patch("src.database.sleep"),
+        ):
+            with self.assertRaises(DatabaseUnavailableError) as raised:
+                database._mysql_connection_with_retry()
+
+        self.assertNotIn("OperationalError", str(raised.exception))
+
+    def test_non_transient_mysql_error_is_not_retried(self) -> None:
+        import pymysql
+
+        database = StoreDatabase(
+            "mysql://stylepick:secret@db.example.com/stylepick",
+            initialize_schema=False,
+        )
+        with (
+            patch.dict(
+                os.environ,
+                {"STYLEPICK_DB_CONNECT_ATTEMPTS": "6"},
+            ),
+            patch.object(
+                database,
+                "_mysql_raw_connection",
+                side_effect=pymysql.err.OperationalError(
+                    1045,
+                    "access denied",
+                ),
+            ) as connect,
+            patch.object(database, "reset_connection_pool"),
+            patch("src.database.sleep") as retry_sleep,
+        ):
+            with self.assertRaises(DatabaseUnavailableError):
+                database._mysql_connection_with_retry()
+
+        connect.assert_called_once_with()
+        retry_sleep.assert_not_called()
+
+    def test_query_disconnect_is_exposed_as_safe_database_error(self) -> None:
+        import pymysql
+
+        raw_connection = Mock()
+        raw_connection.cursor.return_value.execute.side_effect = (
+            pymysql.err.OperationalError(2013, "connection lost")
+        )
+        database = StoreDatabase(
+            "mysql://stylepick:secret@db.example.com/stylepick",
+            initialize_schema=False,
+        )
+        with (
+            patch.object(
+                database,
+                "_mysql_connection_with_retry",
+                return_value=raw_connection,
+            ),
+            patch.object(database, "reset_connection_pool") as reset_pool,
+        ):
+            with self.assertRaises(DatabaseUnavailableError):
+                with database.connect() as connection:
+                    connection.execute("SELECT 1")
+
+        reset_pool.assert_called_once_with()
+
     def test_reset_connection_pool_discards_stale_mysql_pool(self) -> None:
         database = StoreDatabase(
             "mysql://stylepick:secret@db.example.com/stylepick",

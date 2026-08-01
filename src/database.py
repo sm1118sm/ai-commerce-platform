@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock, Thread, Timer
+from time import sleep
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
@@ -39,6 +40,63 @@ EMAIL_PATTERN = re.compile(
 )
 PASSWORD_ITERATIONS = 240_000
 PASSWORD_SPECIAL_CHARACTERS = "!@#$%^&*()-_=+[]{};:,.?/"
+MYSQL_TRANSIENT_ERROR_CODES = {
+    1040,
+    1042,
+    1043,
+    1047,
+    1053,
+    1129,
+    1130,
+    1152,
+    1153,
+    1154,
+    1155,
+    1156,
+    1157,
+    1158,
+    1159,
+    1160,
+    1161,
+    1203,
+    2002,
+    2003,
+    2006,
+    2013,
+    2055,
+}
+
+
+class DatabaseUnavailableError(RuntimeError):
+    """Safe application-level error for an unavailable remote database."""
+
+
+def is_mysql_operational_error(error: Exception) -> bool:
+    """Return whether an exception originated from PyMySQL OperationalError."""
+    error_type = type(error)
+    return (
+        error_type.__name__ == "OperationalError"
+        and error_type.__module__.startswith("pymysql")
+    )
+
+
+def is_transient_mysql_error(error: Exception) -> bool:
+    """Classify MySQL failures that can succeed after reconnecting."""
+    if not is_mysql_operational_error(error):
+        return False
+    arguments = getattr(error, "args", ())
+    return bool(arguments) and arguments[0] in MYSQL_TRANSIENT_ERROR_CODES
+
+
+def _positive_number_from_env(name: str, default: float) -> float:
+    raw_value = os.environ.get(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def normalize_email(email: str) -> str:
@@ -312,10 +370,41 @@ class StoreDatabase:
             except Exception:
                 pass
 
+    def _mysql_connection_with_retry(self):
+        """Acquire MySQL with bounded backoff while a managed DB wakes up."""
+        attempts = max(
+            1,
+            int(_positive_number_from_env("STYLEPICK_DB_CONNECT_ATTEMPTS", 6)),
+        )
+        base_delay = _positive_number_from_env(
+            "STYLEPICK_DB_RETRY_BASE_SECONDS",
+            1.0,
+        )
+        max_delay = _positive_number_from_env(
+            "STYLEPICK_DB_RETRY_MAX_SECONDS",
+            8.0,
+        )
+
+        for attempt in range(attempts):
+            try:
+                return self._mysql_raw_connection()
+            except Exception as error:
+                if not is_mysql_operational_error(error):
+                    raise
+                self.reset_connection_pool()
+                is_last_attempt = attempt + 1 >= attempts
+                if not is_transient_mysql_error(error) or is_last_attempt:
+                    raise DatabaseUnavailableError(
+                        "데이터베이스가 시작 중이거나 일시적으로 연결되지 않습니다."
+                    ) from error
+                sleep(min(base_delay * (2**attempt), max_delay))
+
+        raise AssertionError("MySQL connection retry loop exited unexpectedly")
+
     @contextmanager
     def connect(self):
         if self.kind == "mysql":
-            raw_connection = self._mysql_raw_connection()
+            raw_connection = self._mysql_connection_with_retry()
         else:
             try:
                 import psycopg
@@ -334,13 +423,18 @@ class StoreDatabase:
         try:
             yield connection
             connection.commit()
-        except Exception:
+        except Exception as error:
             try:
                 connection.rollback()
             except Exception:
                 # Preserve the original query/connection error. A dead MySQL
                 # socket can also reject rollback and must not mask its cause.
                 pass
+            if self.kind == "mysql" and is_mysql_operational_error(error):
+                self.reset_connection_pool()
+                raise DatabaseUnavailableError(
+                    "데이터베이스 연결이 일시적으로 끊겼습니다."
+                ) from error
             raise
         finally:
             try:

@@ -1,0 +1,57 @@
+name: Aiven MySQL watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aiven-mysql-watchdog
+  cancel-in-progress: false
+
+jobs:
+  ensure-mysql-running:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Aiven CLI
+        run: python -m pip install --disable-pip-version-check aiven-client
+
+      - name: Monitor and recover Aiven MySQL every minute
+        env:
+          AIVEN_TOKEN: ${{ secrets.AIVEN_TOKEN }}
+          AIVEN_PROJECT: ${{ vars.AIVEN_PROJECT }}
+          AIVEN_SERVICE: ${{ vars.AIVEN_SERVICE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$AIVEN_TOKEN"
+          test -n "$AIVEN_PROJECT"
+          test -n "$AIVEN_SERVICE"
+
+          for check_number in 1 2 3 4 5; do
+            state="$({
+              avn --auth-token "$AIVEN_TOKEN" service get "$AIVEN_SERVICE" \
+                --project "$AIVEN_PROJECT" --json
+            } | python -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
+            echo "Check $check_number/5 - current state: $state"
+
+            if [ "$state" = "POWEROFF" ]; then
+              avn --auth-token "$AIVEN_TOKEN" service update "$AIVEN_SERVICE" \
+                --project "$AIVEN_PROJECT" --power-on
+              avn --auth-token "$AIVEN_TOKEN" service wait "$AIVEN_SERVICE" \
+                --project "$AIVEN_PROJECT"
+            fi
+
+            if [ "$check_number" -lt 5 ]; then
+              sleep 60
+            fi
+          done
+
+          avn --auth-token "$AIVEN_TOKEN" service get "$AIVEN_SERVICE" \
+            --project "$AIVEN_PROJECT" --json \
+            | python -c 'import json,sys; state=json.load(sys.stdin)["state"]; print(f"Final state: {state}"); raise SystemExit(state != "RUNNING")'

@@ -66,6 +66,9 @@ MySQL을 먼저 준비해야 한다. `DATABASE_URL`을 YAML이나 GitHub에 직�
 Aiven 무료 서비스는 비활성 상태에서 자동으로 정지되므로 첫 접속이 평소보다
 느릴 수 있다.
 
+정지 상태 감지와 자동 복구 설정은
+[Aiven MySQL 자동 복구](AIVEN_WATCHDOG.md)를 따른다.
+
 ## 4. 기존 SQLite 데이터를 옮길 경우
 
 대상 MySQL에 회원 데이터가 없을 때 실행한다.
