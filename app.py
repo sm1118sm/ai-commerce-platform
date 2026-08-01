@@ -145,6 +145,17 @@ st.markdown(
       ) {
         display: none !important;
       }
+      iframe[tabindex="-1"],
+      div[data-testid="stElementContainer"]:has(iframe[tabindex="-1"]) {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+      }
       .store-shell-marker,
       div[data-testid="stElementContainer"]:has(.store-shell-marker) {
         display: none !important;
