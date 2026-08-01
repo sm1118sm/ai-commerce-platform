@@ -22,6 +22,7 @@ from src.auth_session import (
     verify_session_token,
 )
 from src.database import (
+    DatabaseUnavailableError,
     PASSWORD_SPECIAL_CHARACTERS,
     StoreDatabase,
     format_phone_input,
@@ -65,6 +66,16 @@ AUTH_SESSION_SECRET = (
 AUTH_COOKIE_COMPONENT_ENABLED = (
     os.environ.get("STYLEPICK_TEST_SYNC_STARTUP") != "1"
 )
+DATABASE_RECOVERY_MESSAGE = (
+    "데이터베이스가 시작 중입니다. 연결이 복구되면 자동으로 다시 시도합니다."
+)
+
+
+def prepare_database_retry() -> None:
+    """Discard a failed cached startup future before Streamlit reruns."""
+    get_database_future.clear()
+
+
 # Streamlit Cloud can keep ``st.cache_resource`` values across hot deploys.
 # Key the database resource by its implementation so a newly deployed class
 # can never reuse an instance created from an older version of database.py.
@@ -1179,10 +1190,17 @@ def submit_login() -> None:
         )
     except ValueError as error:
         st.session_state.login_error = str(error)
+    except DatabaseUnavailableError:
+        prepare_database_retry()
+        st.session_state.login_error = DATABASE_RECOVERY_MESSAGE
 
 
 def start_demo() -> None:
-    login_user(database.ensure_demo_user())
+    try:
+        login_user(database.ensure_demo_user())
+    except DatabaseUnavailableError:
+        prepare_database_retry()
+        st.session_state.login_error = DATABASE_RECOVERY_MESSAGE
 
 
 def submit_signup() -> None:
@@ -1205,6 +1223,9 @@ def submit_signup() -> None:
         )
     except ValueError as error:
         st.session_state.signup_error = str(error)
+    except DatabaseUnavailableError:
+        prepare_database_retry()
+        st.session_state.signup_error = DATABASE_RECOVERY_MESSAGE
 
 
 def logout_user() -> None:
@@ -1324,6 +1345,10 @@ def check_signup_email_availability() -> None:
     except ValueError as error:
         st.session_state.verified_signup_email = None
         st.session_state.signup_email_error = str(error)
+    except DatabaseUnavailableError:
+        prepare_database_retry()
+        st.session_state.verified_signup_email = None
+        st.session_state.signup_email_error = DATABASE_RECOVERY_MESSAGE
 
 
 def check_signup_nickname_availability() -> None:
@@ -1340,6 +1365,10 @@ def check_signup_nickname_availability() -> None:
     except ValueError as error:
         st.session_state.verified_signup_nickname = None
         st.session_state.signup_nickname_error = str(error)
+    except DatabaseUnavailableError:
+        prepare_database_retry()
+        st.session_state.verified_signup_nickname = None
+        st.session_state.signup_nickname_error = DATABASE_RECOVERY_MESSAGE
 
 
 def format_signup_phone() -> None:
@@ -2357,6 +2386,13 @@ auth_page_slot.markdown(
 
 try:
     database = database_future.result()
+except DatabaseUnavailableError:
+    logging.exception("StylePick database is unavailable during initialization")
+    prepare_database_retry()
+    st.warning(DATABASE_RECOVERY_MESSAGE, icon="⏳")
+    st.caption("이 화면은 약 5초 후 자동으로 새로고침됩니다.")
+    time.sleep(5)
+    st.rerun()
 except Exception:
     if os.environ.get("APP_ENV", "development").lower() == "production":
         logging.exception("StylePick database initialization failed")
