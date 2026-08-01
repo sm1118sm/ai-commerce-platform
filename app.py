@@ -145,6 +145,15 @@ st.markdown(
       ) {
         display: none !important;
       }
+      .store-shell-marker,
+      div[data-testid="stElementContainer"]:has(.store-shell-marker) {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+      }
       .block-container {
         max-width: 1280px;
         padding-top: 5rem;
