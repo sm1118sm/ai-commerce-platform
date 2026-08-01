@@ -152,7 +152,7 @@ st.markdown(
       }
       .block-container:has(.store-shell-marker) {
         padding-top: max(
-          4rem,
+          3.5rem,
           calc(3rem + env(safe-area-inset-top, 0px))
         );
       }
@@ -240,7 +240,7 @@ st.markdown(
         container-name: store-header;
         container-type: inline-size;
         padding: .72rem 1rem;
-        margin-bottom: 1.1rem;
+        margin-bottom: 2rem;
         background: rgba(255,255,255,.9);
         border: 1px solid rgba(229,231,235,.9);
         border-radius: 18px;
