@@ -639,7 +639,29 @@ st.markdown(
         }
       }
 
+      @media (min-width: 901px) {
+        .block-container:has(.detail-page-marker) {
+          position: relative;
+          inset: auto;
+          z-index: auto;
+          max-width: 1280px;
+          min-height: calc(100vh - 3rem);
+          overflow: visible;
+          padding: 4.5rem 1rem 2rem;
+        }
+        .st-key-detail_back_bar {
+          position: sticky;
+          top: 3.75rem;
+          left: auto;
+        }
+      }
+
       @media (max-width: 900px) {
+        .stApp:has(.detail-page-marker) [data-testid="stSidebar"],
+        .stApp:has(.detail-page-marker)
+        [data-testid="stSidebarCollapsedControl"] {
+          display: none !important;
+        }
         .block-container { padding-left: 1.15rem; padding-right: 1.15rem; }
         .hero { grid-template-columns: 1fr; }
         .hero-summary { max-width: 520px; }
@@ -2456,9 +2478,6 @@ if auth_notice := st.session_state.pop("auth_notice", None):
     st.toast(auth_notice, icon="✅")
 enable_browser_history_reconciliation()
 sync_product_route(set(products["id"].astype(str)))
-if selected_product_id := st.session_state.get("selected_product_id"):
-    render_product_detail_page(str(selected_product_id))
-    st.stop()
 
 with st.sidebar:
     st.caption(f"로그인: {current_user['email']}")
@@ -2565,6 +2584,10 @@ with st.sidebar:
         f"개인화 행동 {sum(behavior_summary.values()):,}건이 추천에 반영됩니다."
     )
     st.button("로그아웃", width="stretch", on_click=logout_user)
+
+if selected_product_id := st.session_state.get("selected_product_id"):
+    render_product_detail_page(str(selected_product_id))
+    st.stop()
 
 behavior_weights = st.session_state.behavior_weights
 trend_scores = st.session_state.trend_scores
