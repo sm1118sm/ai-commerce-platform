@@ -260,7 +260,7 @@ st.markdown(
         container-name: store-header;
         container-type: inline-size;
         padding: .72rem 1rem;
-        margin-bottom: 2rem;
+        margin-bottom: 0;
         background: rgba(255,255,255,.9);
         border: 1px solid rgba(229,231,235,.9);
         border-radius: 18px;
