@@ -640,6 +640,9 @@ st.markdown(
       }
 
       @media (min-width: 901px) {
+        [data-testid="stMain"]:has(.detail-page-marker) {
+          transform: translateZ(0);
+        }
         .block-container:has(.detail-page-marker) {
           position: relative;
           inset: auto;
@@ -650,8 +653,8 @@ st.markdown(
           padding: 4.5rem 1rem 2rem;
         }
         .st-key-detail_back_bar {
-          position: absolute;
-          top: .45rem;
+          position: fixed;
+          top: 3.45rem;
           left: 1rem;
         }
       }
