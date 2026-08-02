@@ -27,6 +27,10 @@ from tests.test_database import reset_test_database
 
 REPEAT_COUNT = 5
 RESPONSE_BUDGET_SECONDS = 2.0
+ACTION_RESPONSE_BUDGET_SECONDS = {
+    "이메일 중복 확인": 1.0,
+    "닉네임 중복 확인": 1.0,
+}
 TEST_DATABASE_URL = os.environ.get("STYLEPICK_TEST_DATABASE_URL", "")
 TEST_PASSWORD = "Latency-test!"
 PRODUCT_ID = "P028"
@@ -337,16 +341,21 @@ class ButtonLatencyRun:
         )
         passed = True
         for action, samples in self.samples.items():
+            response_budget_seconds = ACTION_RESPONSE_BUDGET_SECONDS.get(
+                action,
+                RESPONSE_BUDGET_SECONDS,
+            )
             action_passed = (
                 len(samples) == REPEAT_COUNT
-                and max(samples) < RESPONSE_BUDGET_SECONDS
+                and max(samples) < response_budget_seconds
             )
             passed = passed and action_passed
             status = "PASS" if action_passed else "FAIL"
             formatted = ", ".join(f"{sample:.3f}" for sample in samples)
             print(
                 f"{status:4} {action}: [{formatted}] "
-                f"avg={mean(samples):.3f}s max={max(samples):.3f}s"
+                f"avg={mean(samples):.3f}s max={max(samples):.3f}s "
+                f"budget={response_budget_seconds:.1f}s"
             )
         return passed
 

@@ -1402,6 +1402,10 @@ def save_header_account_settings() -> None:
 
 
 def check_signup_email_availability() -> None:
+    # 중복 확인으로 앱이 다시 실행되어도 회원가입 탭을 유지한다.
+    # 탭 상태를 추적하지 않으면 결과를 표시할 때 첫 탭인 로그인으로
+    # 돌아갈 수 있다.
+    st.session_state.auth_tab = "회원가입"
     st.session_state.pop("signup_email_error", None)
     email = st.session_state.get("signup_email", "")
     st.session_state.checked_signup_email = normalize_email(email)
@@ -1423,6 +1427,7 @@ def check_signup_email_availability() -> None:
 
 
 def check_signup_nickname_availability() -> None:
+    st.session_state.auth_tab = "회원가입"
     st.session_state.pop("signup_nickname_error", None)
     nickname = st.session_state.get("signup_nickname", "")
     normalized_nickname = normalize_nickname(nickname).casefold()
@@ -1562,7 +1567,11 @@ def render_auth() -> None:
         )
         if st.session_state.pop("account_deleted_notice", False):
             st.success("회원 정보와 연결 데이터가 모두 삭제되었습니다.")
-        login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
+        login_tab, signup_tab = st.tabs(
+            ["로그인", "회원가입"],
+            key="auth_tab",
+            on_change="rerun",
+        )
         with login_tab:
             with st.form("login_form"):
                 st.text_input(
