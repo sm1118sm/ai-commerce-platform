@@ -83,6 +83,7 @@ class AppSmokeTest(unittest.TestCase):
             signup_email.input("available@example.com")
             check_email.click().run()
             self.assertFalse(app.exception)
+            self.assertEqual(app.session_state["auth_tab"], "회원가입")
             self.assertEqual(
                 app.session_state["verified_signup_email"],
                 "available@example.com",
