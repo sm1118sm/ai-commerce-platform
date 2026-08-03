@@ -27,7 +27,7 @@
 - 운영 실행 래퍼: `scripts/run_daily_report.sh`
 - 결과: `reports/daily/{YYYY-MM-DD}.md`
 - 로그: `logs/daily_report.log`
-- 수신 주소: `sm1118sm@gmail.com`
+- 수신 주소: `STYLEPICK_REPORT_RECIPIENT` Secret
 
 ## 구현 순서
 

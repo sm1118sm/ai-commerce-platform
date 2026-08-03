@@ -249,9 +249,9 @@ class DatabaseHelpersTest(unittest.TestCase):
             "user.name+shop@gmail.com",
         )
         for invalid in [
-            "sm1118sm@gmail.com1",
+            "tester@gmail.com1",
             "sm1118sm@gmail",
-            ".sm1118sm@gmail.com",
+            ".tester@gmail.com",
             "sm1118sm..shop@gmail.com",
         ]:
             with self.subTest(invalid=invalid):

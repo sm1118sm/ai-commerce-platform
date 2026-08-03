@@ -46,7 +46,7 @@ bash scripts/run_daily_report.sh \
 
 - 샘플 실행에서 오류 없음
 - Gmail 발송은 가짜 SMTP 자동 테스트로 제목·본문·첨부·로그인을 검증
-- 2026-08-03에 `sm1118sm@gmail.com`으로 샘플 보고서 실제 발송 성공
+- 2026-08-03에 Secret으로 지정한 수신 주소로 샘플 보고서 실제 발송 성공
 - 운영 DB 직접 실행은 이번 증거 범위에서 제외
 - DB 통합 테스트는 `STYLEPICK_TEST_DATABASE_URL`이 없어 건너뜀
 
@@ -63,5 +63,5 @@ bash scripts/run_daily_report.sh \
 - 데이터 원천: Aiven 운영 DB 읽기 전용 조회
 - 확인 값: 전체 등록 회원 3명, 신규 회원 0명, 활동 회원 1명
 - 결과: `reports/daily/2026-08-02.md`
-- 수신 주소: `sm1118sm@gmail.com`
+- 수신 주소: GitHub Actions Secret으로 관리
 - Gmail SMTP 발송: 성공

@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
         "--recipient",
         default=os.environ.get(
             "STYLEPICK_REPORT_RECIPIENT",
-            "sm1118sm@gmail.com",
+            "",
         ),
     )
     return parser.parse_args()
