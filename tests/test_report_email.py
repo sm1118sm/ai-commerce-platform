@@ -41,12 +41,12 @@ class ReportEmailTest(unittest.TestCase):
             report_path.write_text("# 테스트 보고서", encoding="utf-8")
             message = build_report_message(
                 sender="sender@example.com",
-                recipient="sm1118sm@gmail.com",
+                recipient="recipient@example.com",
                 report_date="2026-08-02",
                 report_text="# 테스트 보고서",
                 report_path=report_path,
             )
-        self.assertEqual(message["To"], "sm1118sm@gmail.com")
+        self.assertEqual(message["To"], "recipient@example.com")
         self.assertIn("2026-08-02", message["Subject"])
         self.assertEqual(message.iter_attachments().__next__().get_filename(), "2026-08-02.md")
 
@@ -56,7 +56,7 @@ class ReportEmailTest(unittest.TestCase):
             report_path.write_text("보고서", encoding="utf-8")
             send_report_email(
                 sender="sender@example.com",
-                recipient="sm1118sm@gmail.com",
+                recipient="recipient@example.com",
                 app_password="test-app-password",
                 report_date="2026-08-02",
                 report_text="보고서",
@@ -69,13 +69,13 @@ class ReportEmailTest(unittest.TestCase):
             smtp.login_args,
             ("sender@example.com", "test-app-password"),
         )
-        self.assertEqual(smtp.message["To"], "sm1118sm@gmail.com")
+        self.assertEqual(smtp.message["To"], "recipient@example.com")
 
     def test_missing_credentials_stop_before_connection(self) -> None:
         with self.assertRaisesRegex(ValueError, "앱 비밀번호"):
             send_report_email(
                 sender="",
-                recipient="sm1118sm@gmail.com",
+                recipient="recipient@example.com",
                 app_password="",
                 report_date="2026-08-02",
                 report_text="보고서",

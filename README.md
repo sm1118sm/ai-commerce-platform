@@ -81,13 +81,13 @@ bash scripts/run_daily_report.sh \
 bash scripts/run_daily_report.sh
 ```
 
-생성한 보고서를 `sm1118sm@gmail.com`으로 보내려면 Google 계정에서 2단계
-인증과 앱 비밀번호를 만든 뒤, Git에서 제외된 `.env`에 다음 값을 설정한다.
+생성한 보고서를 이메일로 보내려면 Google 계정에서 2단계 인증과 앱 비밀번호를
+만든 뒤, Git에서 제외된 `.env`에 다음 값을 설정한다.
 일반 Google 계정 비밀번호는 사용하지 않는다.
 
 ```dotenv
-STYLEPICK_REPORT_RECIPIENT=sm1118sm@gmail.com
-STYLEPICK_SMTP_USERNAME=sm1118sm@gmail.com
+STYLEPICK_REPORT_RECIPIENT=recipient@example.com
+STYLEPICK_SMTP_USERNAME=sender@gmail.com
 STYLEPICK_SMTP_APP_PASSWORD=발급받은_16자리_앱_비밀번호
 ```
 
@@ -99,9 +99,9 @@ bash scripts/run_daily_report.sh --send-email
 
 운영 자동 발송은 `.github/workflows/daily-operations-report.yml`이 GitHub
 Actions에서 한국 시간 매일 오전 9시에 실행한다. PC가 꺼져 있어도 동작하며
-`DATABASE_URL`, `STYLEPICK_SMTP_USERNAME`, `STYLEPICK_SMTP_APP_PASSWORD`는
-GitHub Actions Secret으로만 관리한다. 생성된 보고서와 로그는 Actions 실행의
-artifact로 7일 동안 보관한다.
+`DATABASE_URL`, `STYLEPICK_REPORT_RECIPIENT`, `STYLEPICK_SMTP_USERNAME`,
+`STYLEPICK_SMTP_APP_PASSWORD`는 GitHub Actions Secret으로만 관리한다. 생성된
+보고서와 로그는 Actions 실행의 artifact로 7일 동안 보관한다.
 
 VPS `cron`을 대신 사용하려면 `crontab -e`에 프로젝트의 실제 절대 경로로 다음
 한 줄을 등록한다.

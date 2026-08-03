@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      STYLEPICK_REPORT_RECIPIENT: sm1118sm@gmail.com
+      STYLEPICK_REPORT_RECIPIENT: ${{ secrets.STYLEPICK_REPORT_RECIPIENT }}
       STYLEPICK_SMTP_USERNAME: ${{ secrets.STYLEPICK_SMTP_USERNAME }}
       STYLEPICK_SMTP_APP_PASSWORD: ${{ secrets.STYLEPICK_SMTP_APP_PASSWORD }}
     steps:

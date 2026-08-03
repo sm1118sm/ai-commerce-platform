@@ -26,7 +26,7 @@
 
 - 보고서: `reports/daily/{YYYY-MM-DD}.md`
 - 로그: `logs/daily_report.log`
-- 선택적 전달: 생성된 동일 보고서를 `sm1118sm@gmail.com`으로 이메일 발송
+- 선택적 전달: 생성된 동일 보고서를 Secret에 지정한 주소로 이메일 발송
 
 ## 실행 조건
 
