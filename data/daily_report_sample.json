@@ -1,0 +1,44 @@
+{
+  "report_date": "2026-08-02",
+  "source": "테스트 입력(data/daily_report_sample.json)",
+  "total_users": 25,
+  "new_users": 4,
+  "active_users": 18,
+  "actions": {
+    "VIEW": 43,
+    "SEARCH": 15,
+    "WISHLIST_ADD": 8,
+    "WISHLIST_REMOVE": 1,
+    "CART_ADD": 12,
+    "CART_REMOVE": 2,
+    "PURCHASE": 5,
+    "PURCHASE_CANCEL": 1
+  },
+  "previous_actions": {
+    "VIEW": 35,
+    "SEARCH": 10,
+    "WISHLIST_ADD": 6,
+    "WISHLIST_REMOVE": 2,
+    "CART_ADD": 9,
+    "CART_REMOVE": 1,
+    "PURCHASE": 4,
+    "PURCHASE_CANCEL": 0
+  },
+  "paid_orders": 3,
+  "canceled_orders": 1,
+  "paid_revenue": 184000,
+  "paid_quantity": 5,
+  "top_products": [
+    {"name": "데일리 쿠션 러닝화", "count": 3, "detail": "P014"},
+    {"name": "멀티 포트 충전기", "count": 2, "detail": "P005"}
+  ],
+  "search_keywords": [
+    {"name": "러닝화", "count": 8},
+    {"name": "충전기", "count": 4},
+    {"name": "홈트", "count": 3}
+  ],
+  "low_stock_products": [
+    {"name": "데일리 쿠션 러닝화", "count": 2, "detail": "P014"},
+    {"name": "멀티 포트 충전기", "count": 5, "detail": "P005"}
+  ]
+}

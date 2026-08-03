@@ -1,0 +1,44 @@
+name: Daily operations report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-operations-report
+  cancel-in-progress: false
+
+jobs:
+  generate-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      STYLEPICK_REPORT_RECIPIENT: sm1118sm@gmail.com
+      STYLEPICK_SMTP_USERNAME: ${{ secrets.STYLEPICK_SMTP_USERNAME }}
+      STYLEPICK_SMTP_APP_PASSWORD: ${{ secrets.STYLEPICK_SMTP_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install report dependencies
+        run: python -m pip install PyMySQL DBUtils psycopg[binary]
+      - name: Generate yesterday's report and email it
+        run: python scripts/generate_daily_report.py --send-email
+      - name: Upload generated report for seven days
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-operations-report
+          path: |
+            reports/daily/*.md
+            logs/daily_report.log
+          if-no-files-found: warn
+          retention-days: 7

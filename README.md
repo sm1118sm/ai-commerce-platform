@@ -62,6 +62,59 @@ docker compose up -d --build
 
 설정과 보장 범위는 [Aiven MySQL 자동 복구](docs/AIVEN_WATCHDOG.md)를 참고한다.
 
+## 일일 운영 리포트 자동화
+
+전일의 회원·검색·상품 행동·모의 주문·재고를 읽기 전용으로 집계해
+`reports/daily/YYYY-MM-DD.md`와 `logs/daily_report.log`를 생성한다.
+
+테스트 입력으로 실행:
+
+```bash
+bash scripts/run_daily_report.sh \
+  --date 2026-08-02 \
+  --sample-json data/daily_report_sample.json
+```
+
+운영 DB로 전일 보고서 실행(`.env`의 `DATABASE_URL` 사용):
+
+```bash
+bash scripts/run_daily_report.sh
+```
+
+생성한 보고서를 `sm1118sm@gmail.com`으로 보내려면 Google 계정에서 2단계
+인증과 앱 비밀번호를 만든 뒤, Git에서 제외된 `.env`에 다음 값을 설정한다.
+일반 Google 계정 비밀번호는 사용하지 않는다.
+
+```dotenv
+STYLEPICK_REPORT_RECIPIENT=sm1118sm@gmail.com
+STYLEPICK_SMTP_USERNAME=sm1118sm@gmail.com
+STYLEPICK_SMTP_APP_PASSWORD=발급받은_16자리_앱_비밀번호
+```
+
+수동 발송:
+
+```bash
+bash scripts/run_daily_report.sh --send-email
+```
+
+운영 자동 발송은 `.github/workflows/daily-operations-report.yml`이 GitHub
+Actions에서 한국 시간 매일 오전 9시에 실행한다. PC가 꺼져 있어도 동작하며
+`DATABASE_URL`, `STYLEPICK_SMTP_USERNAME`, `STYLEPICK_SMTP_APP_PASSWORD`는
+GitHub Actions Secret으로만 관리한다. 생성된 보고서와 로그는 Actions 실행의
+artifact로 7일 동안 보관한다.
+
+VPS `cron`을 대신 사용하려면 `crontab -e`에 프로젝트의 실제 절대 경로로 다음
+한 줄을 등록한다.
+
+```cron
+0 9 * * * /usr/bin/bash /absolute/path/ai-commerce-platform/scripts/run_daily_report.sh --send-email
+```
+
+보고서 생성은 성공했지만 SMTP 인증이나 발송이 실패하면 종료 코드 1과 `FAIL`
+로그를 남긴다. 비밀번호와 DB 접속 주소는 로그에 기록하지 않는다.
+
+설계와 안전 범위는 [프로젝트 원페이지](docs/project_one_pager.md)를 참고한다.
+
 ## 상세 문서
 
 - [배포 방법](docs/DEPLOYMENT.md)
