@@ -1,4 +1,4 @@
-name: Aiven MySQL watchdog
+name: StylePick service watchdog
 
 on:
   workflow_dispatch:
@@ -14,6 +14,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  keep-streamlit-awake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check and resume Streamlit every 30 seconds
+        run: >-
+          python scripts/streamlit_watchdog.py
+          --checks 10
+          --interval 30
+
   ensure-mysql-running:
     runs-on: ubuntu-latest
     timeout-minutes: 15

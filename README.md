@@ -50,11 +50,15 @@ docker compose up -d --build
 - 쇼핑몰: `http://localhost:8501`
 - 종료: `docker compose down`
 
-## 운영 DB 자동 복구
+## 앱·운영 DB 자동 복구
 
 운영 환경은 Aiven MySQL 무료 플랜을 사용한다. GitHub Actions watchdog이
 5분 예약 주기 안에서 30초마다 서비스 상태를 확인하고, `POWEROFF` 상태면
 자동으로 전원을 켠 뒤 `RUNNING`까지 기다린다.
+
+동일한 작업이 Streamlit Community Cloud control-plane에도 30초마다 resume
+요청을 보내 앱의 inactivity shutdown을 예방한다. PC가 꺼져 있어도 실행되며,
+장기간에는 `render.yaml`의 상시 실행 background worker가 같은 검사를 담당한다.
 
 앱은 MySQL이 시작되는 동안 연결을 지수 백오프로 재시도한다. 연결 실패가
 계속되면 PyMySQL 원문 오류를 사용자에게 노출하지 않고 복구 안내를 표시한 뒤

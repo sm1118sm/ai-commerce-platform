@@ -5,6 +5,7 @@
 - `Dockerfile`: Python 3.12 기반 Streamlit 이미지
 - `docker-compose.yml`: 로컬 앱과 MySQL 8 실행
 - `render.yaml`: Render 웹 서비스 설정
+- `scripts/streamlit_watchdog.py`: Streamlit 상태 확인·자동 resume 워커
 - `database/mysql_schema.sql`: 로컬 Docker용 MySQL 8 스키마
 - `database/postgres_schema.sql`: 선택 가능한 PostgreSQL 스키마
 - `scripts/migrate_sqlite_to_mysql.py`: 기존 SQLite 데이터 이전
@@ -56,6 +57,17 @@ postgresql://사용자명:비밀번호@호스트:5432/데이터베이스명
 
 `render.yaml`의 `autoDeployTrigger: commit` 설정으로 GitHub `main`에 새
 커밋이 병합될 때마다 Streamlit Docker 서비스가 자동으로 다시 배포된다.
+
+현재 Blueprint는 절전 화면이 노출되지 않도록 웹 서비스를 `starter` 상시 실행
+인스턴스로 지정한다. 또한 별도의 `stylepick-streamlit-watchdog` background
+worker가 기존 Streamlit Community Cloud 배포의 control-plane 상태를 30초마다
+확인하고 매번 resume 요청을 보내 inactivity shutdown을 예방한다. Background
+worker는 무료 플랜을 지원하지 않으므로 Render Dashboard에서 결제 수단과 두
+`starter` 서비스의 월 예상 비용을 확인한 뒤 Blueprint를 적용해야 한다.
+
+GitHub Actions에도 동일한 30초 확인 작업이 들어 있지만 이는 배포 전 임시 안전
+장치다. 예약 실행은 지연되거나 비활성화될 수 있으므로 1000일 무접속 상시 감시의
+주 실행기로 간주하지 않는다. 장기 운영은 Render background worker가 담당한다.
 
 MySQL을 선택하면 Render가 관리형 MySQL을 직접 생성하지 않으므로 외부
 MySQL을 먼저 준비해야 한다. `DATABASE_URL`을 YAML이나 GitHub에 직접 넣지

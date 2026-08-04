@@ -2,7 +2,7 @@ services:
   - type: web
     name: stylepick-ai
     runtime: docker
-    plan: free
+    plan: starter
     healthCheckPath: /_stcore/health
     autoDeployTrigger: commit
     envVars:
@@ -12,3 +12,13 @@ services:
         sync: false
       - key: RECOMMENDER_BACKEND
         value: cnn
+
+  - type: worker
+    name: stylepick-streamlit-watchdog
+    runtime: docker
+    plan: starter
+    dockerCommand: python scripts/streamlit_watchdog.py --interval 30
+    autoDeployTrigger: commit
+    envVars:
+      - key: STREAMLIT_APP_URL
+        value: https://ai-commerce-platform-nbtk9sjwlwpfozv2wpqjfa.streamlit.app
