@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stylepick-streamlit-watchdog",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-04",
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "STREAMLIT_APP_URL": "https://ai-commerce-platform-nbtk9sjwlwpfozv2wpqjfa.streamlit.app"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
