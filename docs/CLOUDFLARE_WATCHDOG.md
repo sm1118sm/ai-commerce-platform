@@ -5,6 +5,12 @@
 한 번 더 수행한다. 따라서 사용자 PC와 브라우저가 꺼져 있어도 30초 간격으로
 Streamlit Community Cloud의 inactivity shutdown을 예방한다.
 
+현재 배포 Worker:
+
+- `stylepick-streamlit-watchdog`
+- `https://stylepick-streamlit-watchdog.stylepick-sm1118sm.workers.dev`
+- Cron: `* * * * *`
+
 ## 최초 1회 배포
 
 Cloudflare 무료 계정으로 로그인한 뒤 저장소 루트에서 실행한다.

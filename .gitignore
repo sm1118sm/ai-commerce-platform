@@ -1,4 +1,5 @@
 .venv/
+cloudflare-watchdog/node_modules/
 __pycache__/
 *.py[cod]
 .streamlit/secrets.toml
